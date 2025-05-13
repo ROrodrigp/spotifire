@@ -72,14 +72,39 @@ class SpotifyPeriodicCollector:
         # Spotipy requiere las credenciales en el formato adecuado
         scope = "user-read-recently-played"
         
-        auth_manager = SpotifyOAuth(
-            client_id=self.credentials.get("client_id"),
-            client_secret=self.credentials.get("client_secret"),
-            redirect_uri=self.credentials.get("redirect_uri"),
-            scope=scope,
-            open_browser=False,
-            cache_path=f".spotify_cache_{os.path.basename(self.credentials_file)}"
-        )
+        # Intenta diferentes formatos comunes de archivos de credenciales
+        if "client_id" in self.credentials and "client_secret" in self.credentials:
+            # Formato estándar con client_id y client_secret
+            auth_manager = SpotifyOAuth(
+                client_id=self.credentials.get("client_id"),
+                client_secret=self.credentials.get("client_secret"),
+                redirect_uri=self.credentials.get("redirect_uri", "http://localhost:8888/callback"),
+                scope=scope,
+                open_browser=False,
+                cache_path=f".spotify_cache_{os.path.basename(self.credentials_file)}"
+            )
+        elif "id" in self.credentials:
+            # Formato alternativo
+            auth_manager = SpotifyOAuth(
+                client_id=self.credentials.get("id"),
+                client_secret=self.credentials.get("secret", self.credentials.get("client_secret")),
+                redirect_uri=self.credentials.get("uri", self.credentials.get("redirect_uri", "http://localhost:8888/callback")),
+                scope=scope,
+                open_browser=False,
+                cache_path=f".spotify_cache_{os.path.basename(self.credentials_file)}"
+            )
+        elif "SPOTIPY_CLIENT_ID" in os.environ and "SPOTIPY_CLIENT_SECRET" in os.environ:
+            # Usar variables de entorno si están disponibles
+            logger.info("Usando credenciales de variables de entorno")
+            auth_manager = SpotifyOAuth(
+                scope=scope,
+                open_browser=False,
+                cache_path=f".spotify_cache_{os.path.basename(self.credentials_file)}"
+            )
+        else:
+            # Imprimir el contenido del archivo para depuración
+            logger.error(f"Formato de credenciales no reconocido. Contenido: {json.dumps(self.credentials, indent=2)}")
+            raise ValueError("Formato de credenciales no válido. Necesita contener 'client_id' y 'client_secret' o configurar variables de entorno SPOTIPY_CLIENT_ID y SPOTIPY_CLIENT_SECRET")
         
         return spotipy.Spotify(auth_manager=auth_manager)
     
@@ -164,7 +189,40 @@ def main():
     parser.add_argument('--credentials_file', required=True, help='Ruta al archivo JSON con las credenciales')
     parser.add_argument('--output_dir', required=True, help='Directorio donde se guardarán los CSV de datos')
     parser.add_argument('--interval', type=int, default=3600, help='Intervalo en segundos entre recolecciones (por defecto: 3600)')
+    parser.add_argument('--check-credentials', action='store_true', help='Solo verifica el formato de las credenciales sin ejecutar el servicio')
     args = parser.parse_args()
+    
+    # Verificar si el archivo de credenciales existe
+    if not os.path.isfile(args.credentials_file):
+        logger.error(f"El archivo de credenciales no existe: {args.credentials_file}")
+        return 1
+    
+    # Solo verificar las credenciales si se solicita
+    if args.check_credentials:
+        try:
+            with open(args.credentials_file, 'r') as f:
+                credentials = json.load(f)
+                print(f"Contenido del archivo de credenciales: {json.dumps(credentials, indent=2)}")
+                print("Verificando si tiene los campos necesarios...")
+                
+                if "client_id" in credentials and "client_secret" in credentials:
+                    print("✅ El archivo contiene los campos necesarios (client_id, client_secret)")
+                elif "id" in credentials:
+                    print("✅ El archivo contiene 'id', que se puede usar como client_id")
+                else:
+                    print("❌ El archivo no contiene los campos necesarios")
+                    print("Campos requeridos:")
+                    print("  - client_id y client_secret")
+                    print("  O")
+                    print("  - id y secret (o client_secret)")
+                    print("\nAlternativamente, puedes configurar las variables de entorno:")
+                    print("  export SPOTIPY_CLIENT_ID='tu-client-id'")
+                    print("  export SPOTIPY_CLIENT_SECRET='tu-client-secret'")
+                    print("  export SPOTIPY_REDIRECT_URI='tu-redirect-uri'")
+            return 0
+        except Exception as e:
+            logger.error(f"Error al verificar credenciales: {e}")
+            return 1
     
     try:
         collector = SpotifyPeriodicCollector(
