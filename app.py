@@ -96,7 +96,22 @@ def submit_credentials():
             if sp_oauth.is_token_expired(token_info):
                 logger.debug("Existing token has expired, refreshing...")
                 try:
+                    # Guardar los campos adicionales antes de refrescar
+                    saved_client_id = token_info.get('client_id')
+                    saved_client_secret = token_info.get('client_secret')
+                    saved_redirect_uri = token_info.get('redirect_uri')
+                    saved_user_id = token_info.get('user_id')
+                    saved_display_name = token_info.get('display_name')
+                    
                     token_info = sp_oauth.refresh_access_token(token_info['refresh_token'])
+                    
+                    # Restaurar los campos adicionales
+                    token_info['client_id'] = saved_client_id
+                    token_info['client_secret'] = saved_client_secret
+                    token_info['redirect_uri'] = saved_redirect_uri
+                    token_info['user_id'] = saved_user_id
+                    token_info['display_name'] = saved_display_name
+                    
                     # Actualizar el archivo con el nuevo token
                     token_info['last_updated'] = datetime.now().isoformat()
                     with open(client_file, 'w') as f:
@@ -227,6 +242,11 @@ def callback():
     
     token_info['last_updated'] = datetime.now().isoformat()
     
+    # Añadir credenciales al token para el servicio periódico
+    token_info['client_id'] = client_id
+    token_info['client_secret'] = client_secret
+    token_info['redirect_uri'] = REDIRECT_URI
+    
     try:
         with open(client_file, 'w') as f:
             json.dump(token_info, f)
@@ -287,12 +307,28 @@ def dashboard():
     if sp_oauth.is_token_expired(token_info):
         logger.debug("Token expired, refreshing...")
         try:
+            # Guardar los campos adicionales antes de refrescar
+            saved_client_id = token_info.get('client_id')
+            saved_client_secret = token_info.get('client_secret')
+            saved_redirect_uri = token_info.get('redirect_uri')
+            saved_user_id = token_info.get('user_id')
+            saved_display_name = token_info.get('display_name')
+            
+            # Refrescar el token
             token_info = sp_oauth.refresh_access_token(token_info['refresh_token'])
+            
+            # Restaurar los campos adicionales
+            token_info['client_id'] = saved_client_id
+            token_info['client_secret'] = saved_client_secret
+            token_info['redirect_uri'] = saved_redirect_uri
+            token_info['user_id'] = saved_user_id
+            token_info['display_name'] = saved_display_name
+            token_info['last_updated'] = datetime.now().isoformat()
+            
             session['token_info'] = token_info
             
             # Actualizar el archivo con el token renovado
             client_file = os.path.join(USERS_DATA_DIR, f"{client_id}.json")
-            token_info['last_updated'] = datetime.now().isoformat()
             with open(client_file, 'w') as f:
                 json.dump(token_info, f)
             

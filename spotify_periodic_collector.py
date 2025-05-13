@@ -72,9 +72,57 @@ class SpotifyPeriodicCollector:
         # Spotipy requiere las credenciales en el formato adecuado
         scope = "user-read-recently-played"
         
-        # Intenta diferentes formatos comunes de archivos de credenciales
-        if "client_id" in self.credentials and "client_secret" in self.credentials:
+        # Intentar diferentes formatos de archivo JSON
+        if "access_token" in self.credentials:
+            # Este es un formato de token completo de OAuth (como los guardados por app.py)
+            logger.info("Detectado token completo de OAuth en el archivo")
+            
+            # Si el archivo tiene client_id y client_secret directamente
+            if "client_id" in self.credentials and "client_secret" in self.credentials:
+                logger.info("Usando client_id y client_secret del archivo")
+                client_id = self.credentials.get("client_id")
+                client_secret = self.credentials.get("client_secret")
+                redirect_uri = self.credentials.get("redirect_uri", "http://localhost:8888/callback")
+            else:
+                # Si no tiene credenciales, intentar variables de entorno
+                logger.info("Token sin credenciales, usando variables de entorno")
+                client_id = os.environ.get("SPOTIPY_CLIENT_ID")
+                client_secret = os.environ.get("SPOTIPY_CLIENT_SECRET")
+                redirect_uri = os.environ.get("SPOTIPY_REDIRECT_URI", "http://localhost:8888/callback")
+                
+                if not client_id or not client_secret:
+                    logger.error("No se encontraron credenciales ni en el archivo ni en variables de entorno")
+                    raise ValueError("No se encontraron credenciales para autenticación")
+            
+            # Configurar OAuth con token existente
+            auth_manager = SpotifyOAuth(
+                client_id=client_id,
+                client_secret=client_secret,
+                redirect_uri=redirect_uri,
+                scope=scope,
+                open_browser=False,
+                cache_path=f".spotify_cache_{os.path.basename(self.credentials_file)}"
+            )
+            
+            # Si hay un refresh_token, usarlo para inicializar correctamente
+            if "refresh_token" in self.credentials:
+                # El archivo ya incluye un token, podemos configurar la cache para spotipy
+                logger.info("Usando refresh_token del archivo")
+                token_info = {
+                    "access_token": self.credentials.get("access_token"),
+                    "refresh_token": self.credentials.get("refresh_token"),
+                    "expires_at": self.credentials.get("expires_at", 0),
+                    "scope": self.credentials.get("scope", scope),
+                    "token_type": self.credentials.get("token_type", "Bearer")
+                }
+                
+                # Guardar en el cache de spotipy
+                auth_manager.cache_handler.save_token_to_cache(token_info)
+                logger.info("Token guardado en el cache de spotipy")
+        
+        elif "client_id" in self.credentials and "client_secret" in self.credentials:
             # Formato estándar con client_id y client_secret
+            logger.info("Usando formato estándar con client_id y client_secret")
             auth_manager = SpotifyOAuth(
                 client_id=self.credentials.get("client_id"),
                 client_secret=self.credentials.get("client_secret"),
@@ -85,6 +133,7 @@ class SpotifyPeriodicCollector:
             )
         elif "id" in self.credentials:
             # Formato alternativo
+            logger.info("Usando formato alternativo con 'id' como client_id")
             auth_manager = SpotifyOAuth(
                 client_id=self.credentials.get("id"),
                 client_secret=self.credentials.get("secret", self.credentials.get("client_secret")),
