@@ -13,10 +13,20 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY")
 
+# Configurar Flask para generar URLs HTTPS
+app.config['PREFERRED_URL_SCHEME'] = 'https'
+
 # Configuración para almacenar datos de usuarios
 USERS_DATA_DIR = "users_data"
 if not os.path.exists(USERS_DATA_DIR):
     os.makedirs(USERS_DATA_DIR)
+
+# Establece la URL base para redirecciones seguras
+# Reemplaza esta IP con tu IP elástica real
+REDIRECT_BASE_URL = "https://52-203-107-89.nip.io"
+
+# Define la URI de redirección completa
+REDIRECT_URI = f"{REDIRECT_BASE_URL}/callback"
 
 @app.route('/')
 def index():
@@ -30,11 +40,11 @@ def login():
     state = str(uuid.uuid4())
     session['state'] = state
     
-    # Configurar OAuth
+    # Configurar OAuth con la URI de redirección segura
     sp_oauth = SpotifyOAuth(
         client_id=os.getenv('SPOTIFY_CLIENT_ID'),
         client_secret=os.getenv('SPOTIFY_CLIENT_SECRET'),
-        redirect_uri=url_for('callback', _external=True),
+        redirect_uri=REDIRECT_URI,
         scope="user-read-recently-played user-top-read",
         state=state
     )
@@ -50,11 +60,11 @@ def callback():
     if request.args.get('state') != session.get('state'):
         return redirect('/')
     
-    # Configurar OAuth
+    # Configurar OAuth con la misma URI de redirección
     sp_oauth = SpotifyOAuth(
         client_id=os.getenv('SPOTIFY_CLIENT_ID'),
         client_secret=os.getenv('SPOTIFY_CLIENT_SECRET'),
-        redirect_uri=url_for('callback', _external=True),
+        redirect_uri=REDIRECT_URI,
         scope="user-read-recently-played user-top-read"
     )
     
@@ -92,7 +102,7 @@ def dashboard():
     sp_oauth = SpotifyOAuth(
         client_id=os.getenv('SPOTIFY_CLIENT_ID'),
         client_secret=os.getenv('SPOTIFY_CLIENT_SECRET'),
-        redirect_uri=url_for('callback', _external=True),
+        redirect_uri=REDIRECT_URI,
         scope="user-read-recently-played user-top-read"
     )
     
@@ -116,8 +126,32 @@ def dashboard():
             'played_at': item['played_at']
         })
     
-    # Mostrar los datos en formato JSON (puedes modificar esto para usar plantillas HTML)
+    # Mostrar los datos en formato JSON
     return jsonify(tracks)
 
+# Endpoint adicional para verificar el estado de autenticación
+@app.route('/auth_status')
+def auth_status():
+    """Verifica el estado de la autenticación y tokens"""
+    token_info = session.get('token_info')
+    if not token_info:
+        return jsonify({
+            "authenticated": False,
+            "message": "No hay sesión activa"
+        })
+    
+    # Información básica sobre la autenticación
+    return jsonify({
+        "authenticated": True,
+        "user_id": token_info.get('user_id', 'Desconocido'),
+        "display_name": token_info.get('display_name', 'Desconocido'),
+        "token_expires_in": token_info.get('expires_in', 0),
+        "scopes": token_info.get('scope', '').split()
+    })
+
 if __name__ == '__main__':
+    # Para desarrollo, puedes mantener esto
     app.run(host='0.0.0.0', port=8080, debug=True)
+    
+    # Para producción, comenta la línea anterior y descomenta esta:
+    # app.run(host='0.0.0.0', port=8080, ssl_context='adhoc')
