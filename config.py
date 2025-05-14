@@ -2,12 +2,14 @@ import os
 import uuid
 from dotenv import load_dotenv
 
-# Cargar variables de entorno
+# Cargar variables de entorno desde .env
 load_dotenv()
 
 class Config:
-    # Configuración general
-    SECRET_KEY = os.getenv("FLASK_SECRET_KEY", str(uuid.uuid4()))
+    # Usar la clave secreta desde la variable de entorno, con un fallback por seguridad
+    SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "fallback-key-if-env-not-found")
+    
+    # Resto de la configuración...
     PREFERRED_URL_SCHEME = 'https'
     
     # Directorios

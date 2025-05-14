@@ -1,5 +1,5 @@
 from flask import Flask
-from flask.sessions import FileSystemSessionInterface
+from flask_session import Session
 import os
 import logging
 import sys
@@ -15,22 +15,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-class CustomFileSystemSessionInterface(FileSystemSessionInterface):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.use_signer = True
-
 def create_app(config_class=Config):
     app = Flask(__name__, template_folder='../templates', static_folder='../static')
     app.config.from_object(config_class)
     
-    # Configurar sesiones basadas en archivos
-    session_dir = os.path.join(config_class.APP_DIR, "data", "sessions")
-    os.makedirs(session_dir, exist_ok=True)
-    app.session_interface = CustomFileSystemSessionInterface(
-        session_dir, 
-        app.secret_key
-    )
+    # Configuración de sesión basada en sistema de archivos
+    app.config['SESSION_TYPE'] = 'filesystem'
+    app.config['SESSION_FILE_DIR'] = os.path.join(config_class.APP_DIR, "data", "sessions")
+    app.config['SESSION_USE_SIGNER'] = True
+    app.config['SESSION_PERMANENT'] = False
+    app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 1 día en segundos
+    
+    # Crear directorio de sesiones
+    os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
+    
+    # Inicializar extensión de sesión
+    Session(app)
     
     # Asegurar que existen los directorios necesarios
     Config.init_app()
