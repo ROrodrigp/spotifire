@@ -1,0 +1,34 @@
+/* Estilos globales */
+body {
+    background-color: #191414;
+    color: #ffffff;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* Componentes comunes */
+.navbar {
+    background-color: #121212;
+    border-bottom: 1px solid #333;
+}
+
+.navbar-brand {
+    color: #1DB954;
+    font-weight: bold;
+}
+
+.btn-spotify {
+    background-color: #1DB954;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    font-weight: bold;
+}
+
+.btn-spotify:hover {
+    background-color: #1ed760;
+    color: white;
+}
+
+.alert {
+    margin-bottom: 20px;
+}

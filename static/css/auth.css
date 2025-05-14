@@ -1,0 +1,42 @@
+.login-container {
+    max-width: 500px;
+    margin: 100px auto;
+    background-color: #121212;
+    padding: 30px;
+    border-radius: 10px;
+    box-shadow: 0 0 20px rgba(30, 215, 96, 0.3);
+}
+
+.logo {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.logo h1 {
+    color: #1DB954;
+    font-weight: bold;
+}
+
+.form-control {
+    background-color: #282828;
+    border: none;
+    color: white;
+    margin-bottom: 15px;
+}
+
+.form-control:focus {
+    background-color: #333;
+    color: white;
+    box-shadow: none;
+    border: 1px solid #1DB954;
+}
+
+.form-label {
+    color: #b3b3b3;
+}
+
+.info-text {
+    color: #b3b3b3;
+    font-size: 0.9rem;
+    margin-top: 15px;
+}
