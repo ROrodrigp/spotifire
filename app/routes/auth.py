@@ -49,13 +49,20 @@ def submit_credentials():
             with open(client_file, 'r') as f:
                 token_info = json.load(f)
             
+            # Verificación adicional para asegurar que el token pertenece al client_id correcto
+            if token_info.get('client_id') != client_id:
+                logger.warning(f"Token client_id mismatch: {token_info.get('client_id')} != {client_id}")
+                flash("Inconsistencia en las credenciales guardadas. Iniciando nuevo flujo de autenticación.")
+                return redirect('/login')
+            
             # Verificar si el token ha expirado
             sp_oauth = get_spotify_oauth(client_id, client_secret)
             
             if sp_oauth.is_token_expired(token_info):
                 try:
                     token_info = refresh_token(token_info, client_id, client_secret)
-                except Exception:
+                except Exception as e:
+                    logger.error(f"Error refreshing token: {str(e)}")
                     # Si falla la renovación, necesitamos un nuevo token
                     return redirect('/login')
             
@@ -129,14 +136,8 @@ def callback():
         session.clear()
         return redirect('/')
     
-    # Añadir verificación adicional para el client_id
-    client_id_param = request.args.get('client_id')
-    if client_id_param and client_id_param != client_id:
-        logger.error(f"Client ID mismatch: {client_id_param} vs {client_id}")
-        flash("Las credenciales no coinciden con las utilizadas para iniciar la autenticación.")
-        # Limpiar sesión
-        session.clear()
-        return redirect('/')
+    # Eliminar el estado de la sesión para evitar reutilización
+    session.pop('state', None)
     
     logger.debug("State verification passed")
     
@@ -157,20 +158,17 @@ def callback():
         session.clear()
         return redirect('/')
     
-    # Guardar el token en la sesión
-    session['token_info'] = token_info
-    logger.debug("Token info saved to session")
-    
     # Obtener el perfil del usuario para identificarlo
     try:
         sp = spotipy.Spotify(auth=token_info['access_token'])
         user_profile = sp.current_user()
         user_id = user_profile['id']
-        logger.debug(f"Retrieved user profile. User ID: {user_id}")
+        display_name = user_profile.get('display_name', user_id)
+        logger.debug(f"Retrieved user profile. User ID: {user_id}, Display Name: {display_name}")
         
         # Guardar la información del usuario en el token
         token_info['user_id'] = user_id
-        token_info['display_name'] = user_profile.get('display_name', user_id)
+        token_info['display_name'] = display_name
     except Exception as e:
         logger.error(f"Error getting user profile: {str(e)}")
         flash(f"Error recuperando el perfil de usuario: {str(e)}")
@@ -178,16 +176,15 @@ def callback():
         session.clear()
         return redirect('/')
     
-    # Guardar el token para este client_id
-    client_file = os.path.join(Config.USERS_DATA_DIR, f"{client_id}.json")
-    logger.debug(f"Will save token to: {client_file}")
-    
+    # Añadir información adicional al token
     token_info['last_updated'] = datetime.now().isoformat()
-    
-    # Añadir credenciales al token para el servicio periódico
     token_info['client_id'] = client_id
     token_info['client_secret'] = client_secret
     token_info['redirect_uri'] = Config.REDIRECT_URI
+    
+    # Guardar el token para este client_id
+    client_file = os.path.join(Config.USERS_DATA_DIR, f"{client_id}.json")
+    logger.debug(f"Will save token to: {client_file}")
     
     try:
         with open(client_file, 'w') as f:
@@ -200,19 +197,21 @@ def callback():
         session.clear()
         return redirect('/')
     
+    # Guardar el token en la sesión
+    session['token_info'] = token_info
+    logger.debug("Token info saved to session")
+    
     # Redirigir a la página de dashboard
     logger.debug(f"Redirecting to dashboard with client_id: {client_id}")
     return redirect('/dashboard')
+
 @auth_bp.route('/logout')
 def logout():
     """Cierra la sesión del usuario"""
     logger.debug("Logout endpoint accessed")
     
     # Limpiar datos de la sesión
-    session.pop('client_id', None)
-    session.pop('client_secret', None)
-    session.pop('token_info', None)
-    session.pop('state', None)
+    session.clear()
     
     flash("Has cerrado sesión correctamente")
     return redirect('/')

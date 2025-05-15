@@ -1,8 +1,10 @@
 import os
 import json
 import logging
+from datetime import datetime
 from flask import Blueprint, session, redirect, render_template, flash, jsonify
-from app.services.spotify import get_spotify_oauth, refresh_token, get_user_data
+import spotipy
+from app.services.spotify import get_spotify_oauth, refresh_token, get_user_data, validate_token, load_user_token
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -26,30 +28,17 @@ def dashboard():
     if not token_info:
         logger.warning("No token found in session, checking if we have it saved")
         
-        # Verificar si existe un token guardado para este client_id
-        client_file = os.path.join(Config.USERS_DATA_DIR, f"{client_id}.json")
+        # Intentar cargar el token desde el archivo
+        token_info = load_user_token(client_id)
         
-        if os.path.exists(client_file):
-            try:
-                with open(client_file, 'r') as f:
-                    token_info = json.load(f)
-                
-                # Verificar que el token corresponde a este client_id
-                if token_info.get('client_id') != client_id:
-                    logger.error(f"Token mismatch: {token_info.get('client_id')} != {client_id}")
-                    flash("Error de consistencia en token. Por favor inicia sesión nuevamente.")
-                    return redirect('/logout')
-                
-                session['token_info'] = token_info
-                logger.debug("Loaded token from file")
-            except Exception as e:
-                logger.error(f"Error loading token from file: {str(e)}")
-                flash("Se necesita iniciar sesión en Spotify")
-                return redirect('/login')
-        else:
-            logger.warning("No saved token found, redirecting to login")
+        if not token_info:
+            logger.warning("No valid token found, redirecting to login")
             flash("Se necesita iniciar sesión en Spotify")
             return redirect('/login')
+        
+        # Guardar el token en la sesión
+        session['token_info'] = token_info
+        logger.debug("Loaded token from file and saved to session")
     
     # Verificar si el token ha expirado
     sp_oauth = get_spotify_oauth(client_id, client_secret)
@@ -96,6 +85,12 @@ def actualizar_datos():
     if not client_id or not client_secret or not token_info:
         return jsonify({
             'error': 'No se encontraron credenciales o token'
+        }), 401
+    
+    # Verificar que el token pertenece al client_id actual
+    if not validate_token(token_info, client_id):
+        return jsonify({
+            'error': 'El token no es válido para este cliente'
         }), 401
     
     # Verificar si el token ha expirado
