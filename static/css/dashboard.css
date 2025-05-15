@@ -63,6 +63,7 @@
 .track-title, .artist-name {
     font-weight: bold;
     margin-bottom: 3px;
+    color: #1DB954; /* Cambiado de blanco a verde Spotify */
 }
 
 .track-artist, .artist-genre {
