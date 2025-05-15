@@ -22,6 +22,10 @@ def submit_credentials():
     """Recibe y procesa las credenciales de Spotify del usuario"""
     logger.debug("Credentials submission received")
     
+    # Limpiar la sesión actual para evitar mezclas de credenciales
+    session.clear()
+    logger.debug("Session cleared before processing new credentials")
+    
     client_id = request.form.get('client_id')
     client_secret = request.form.get('client_secret')
     
@@ -33,7 +37,7 @@ def submit_credentials():
     # Guardar credenciales en la sesión
     session['client_id'] = client_id
     session['client_secret'] = client_secret
-    logger.debug("Credentials saved to session")
+    logger.debug(f"New credentials saved to session: client_id={client_id[:4]}...")
     
     # Verificar si ya tenemos un token para este usuario
     client_file = os.path.join(Config.USERS_DATA_DIR, f"{client_id}.json")

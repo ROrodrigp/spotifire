@@ -9,11 +9,12 @@ logger = logging.getLogger(__name__)
 dashboard_bp = Blueprint('dashboard', __name__)
 
 @dashboard_bp.route('/dashboard')
+@dashboard_bp.route('/dashboard')
 def dashboard():
     """Muestra el dashboard con los datos de Spotify"""
     logger.debug("Dashboard endpoint accessed")
     
-    # Verificar que tenemos las credenciales y token en la sesión
+    # Verificar que tenemos las credenciales en la sesión
     client_id = session.get('client_id')
     client_secret = session.get('client_secret')
     token_info = session.get('token_info')
@@ -33,6 +34,13 @@ def dashboard():
             try:
                 with open(client_file, 'r') as f:
                     token_info = json.load(f)
+                
+                # Verificar que el token corresponde a este client_id
+                if token_info.get('client_id') != client_id:
+                    logger.error(f"Token mismatch: {token_info.get('client_id')} != {client_id}")
+                    flash("Error de consistencia en token. Por favor inicia sesión nuevamente.")
+                    return redirect('/logout')
+                
                 session['token_info'] = token_info
                 logger.debug("Loaded token from file")
             except Exception as e:
