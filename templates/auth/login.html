@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}Spotifire - Inicio{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="login-container">
+    <div class="logo">
+        <h1>Spotifire</h1>
+        <p>Conecta tu cuenta de Spotify</p>
+    </div>
+    
+    <div class="card-body">
+        <form action="/submit_credentials" method="post">
+            <div class="mb-3">
+                <label for="client_id" class="form-label">Client ID</label>
+                <input type="text" class="form-control" id="client_id" name="client_id" required>
+            </div>
+            <div class="mb-3">
+                <label for="client_secret" class="form-label">Client Secret</label>
+                <input type="password" class="form-control" id="client_secret" name="client_secret" required>
+            </div>
+            <button type="submit" class="btn btn-spotify">Conectar con Spotify</button>
+        </form>
+        
+        <div class="info-text">
+            <p>Para obtener tus credenciales de Spotify:</p>
+            <ol>
+                <li>Ve a <a href="https://developer.spotify.com/dashboard" target="_blank" style="color: #1DB954;">Spotify Developer Dashboard</a></li>
+                <li>Inicia sesión con tu cuenta de Spotify</li>
+                <li>Crea una nueva aplicación</li>
+                <li>Configura la URI de redirección como: <code>{{ redirect_uri }}</code></li>
+                <li>Copia el Client ID y Client Secret</li>
+            </ol>
+        </div>
+    </div>
+</div>
+{% endblock %}

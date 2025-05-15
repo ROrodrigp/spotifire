@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}Spotifire - Dashboard{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+{% endblock %}
+
+{% block navigation %}
+<nav class="navbar navbar-expand-lg navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="#">Spotifire</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse justify-content-end" id="navbarNav">
+            <ul class="navbar-nav">
+                <li class="nav-item">
+                    <a class="nav-link" href="/logout">Cerrar sesión</a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>
+{% endblock %}
+
+{% block container_fluid %}-fluid{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Sidebar -->
+    <div class="col-lg-2 sidebar d-none d-lg-block">
+        <a href="#" class="sidebar-item active">
+            <i class="bi bi-house-door sidebar-icon"></i> Inicio
+        </a>
+        <a href="#" class="sidebar-item">
+            <i class="bi bi-music-note-list sidebar-icon"></i> Canciones recientes
+        </a>
+        <a href="#" class="sidebar-item">
+            <i class="bi bi-person-badge sidebar-icon"></i> Artistas favoritos
+        </a>
+        <a href="#" class="sidebar-item">
+            <i class="bi bi-graph-up sidebar-icon"></i> Estadísticas
+        </a>
+        <a href="#" class="sidebar-item">
+            <i class="bi bi-gear sidebar-icon"></i> Configuración
+        </a>
+    </div>
+    
+    <!-- Content area -->
+    <div class="col-lg-10 content-area">
+        <!-- Welcome Banner -->
+        <div class="welcome-banner">
+            <h3 class="welcome-message">¡Bienvenido, {{ user_name }}!</h3>
+            <button class="btn btn-dark">Actualizar datos</button>
+        </div>
+        
+        <div class="row">
+            <!-- Recent Tracks -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-music-note-list me-2"></i> Canciones reproducidas recientemente
+                    </div>
+                    <div class="card-body">
+                        {% if recent_tracks %}
+                            {% for track in recent_tracks %}
+                                <div class="track-item">
+                                    <div class="track-details">
+                                        <div class="track-title">{{ track.name }}</div>
+                                        <div class="track-artist">{{ track.artist }}</div>
+                                    </div>
+                                    <div class="track-time">
+                                        {% if track.played_at %}
+                                            {{ track.played_at }}
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        {% else %}
+                            <p>No se encontraron canciones recientes.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Top Artists -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-person-badge me-2"></i> Tus artistas top
+                    </div>
+                    <div class="card-body">
+                        {% if top_artists %}
+                            {% for artist in top_artists %}
+                                <div class="artist-item">
+                                    <div class="artist-details">
+                                        <div class="artist-name">{{ artist.name }}</div>
+                                        <div class="artist-genre">
+                                            {% if artist.genres and artist.genres|length > 0 %}
+                                                {{ artist.genres|join(', ') }}
+                                            {% else %}
+                                                Sin géneros definidos
+                                            {% endif %}
+                                        </div>
+                                        <!-- Usar una clase predefinida en lugar de estilo inline -->
+                                        <div class="popularity-bar popularity-{{ (artist.popularity//10)*10 if artist.popularity is defined else 50 }}"></div>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        {% else %}
+                            <p>No se encontraron artistas destacados.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}
