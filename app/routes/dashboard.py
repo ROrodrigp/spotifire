@@ -9,7 +9,6 @@ logger = logging.getLogger(__name__)
 dashboard_bp = Blueprint('dashboard', __name__)
 
 @dashboard_bp.route('/dashboard')
-@dashboard_bp.route('/dashboard')
 def dashboard():
     """Muestra el dashboard con los datos de Spotify"""
     logger.debug("Dashboard endpoint accessed")
