@@ -1,5 +1,4 @@
 from flask import Flask
-from flask_session import Session
 import os
 import logging
 import sys
@@ -20,7 +19,6 @@ def create_app(config_class=Config):
     app.config.from_object(config_class)
     
     # Configuración de sesión basada en sistema de archivos
-    app.config['SESSION_TYPE'] = 'filesystem'
     app.config['SESSION_FILE_DIR'] = os.path.join(config_class.APP_DIR, "data", "sessions")
     app.config['SESSION_USE_SIGNER'] = True
     app.config['SESSION_PERMANENT'] = False
@@ -28,9 +26,6 @@ def create_app(config_class=Config):
     
     # Crear directorio de sesiones
     os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
-    
-    # Inicializar extensión de sesión
-    Session(app)
     
     # Asegurar que existen los directorios necesarios
     Config.init_app()

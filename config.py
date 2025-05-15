@@ -20,6 +20,10 @@ class Config:
     REDIRECT_BASE_URL = "https://52-203-107-89.nip.io"  
     REDIRECT_URI = f"{REDIRECT_BASE_URL}/callback"
     
+    SESSION_COOKIE_SECURE = True       # Solo se envía por HTTPS (¡habilita esto solo en producción!)
+    SESSION_COOKIE_HTTPONLY = True     # No accesible por JavaScript → protege contra XSS
+    SESSION_COOKIE_SAMESITE = 'Lax'
+
     # Creación de directorios necesarios
     @staticmethod
     def init_app():

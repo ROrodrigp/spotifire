@@ -113,7 +113,7 @@ def callback():
     
     if not client_id or not client_secret:
         logger.error("Missing client ID or client secret in session during callback")
-        flash("Se perdieron las credenciales durante la autenticación")
+        flash("Se perdieron las credenciales durante la autenticación. Por favor intenta conectarte nuevamente.")
         return redirect('/')
     
     # Verificar el estado para prevenir CSRF
@@ -124,11 +124,23 @@ def callback():
     
     if request_state != session_state:
         logger.error(f"State mismatch: {request_state} vs {session_state}")
+        flash("Error de verificación de estado. Por favor intenta conectarte nuevamente.")
+        # Limpiar la sesión para evitar problemas futuros
+        session.clear()
+        return redirect('/')
+    
+    # Añadir verificación adicional para el client_id
+    client_id_param = request.args.get('client_id')
+    if client_id_param and client_id_param != client_id:
+        logger.error(f"Client ID mismatch: {client_id_param} vs {client_id}")
+        flash("Las credenciales no coinciden con las utilizadas para iniciar la autenticación.")
+        # Limpiar sesión
+        session.clear()
         return redirect('/')
     
     logger.debug("State verification passed")
     
-    # Configurar OAuth con las credenciales del usuario
+    # Configurar OAuth con las credenciales del usuario actual
     sp_oauth = get_spotify_oauth(client_id, client_secret)
     
     # Obtener token usando el código de autorización
@@ -141,6 +153,8 @@ def callback():
     except Exception as e:
         logger.error(f"Error getting access token: {str(e)}")
         flash(f"Error obteniendo el token: {str(e)}")
+        # Limpiar sesión para evitar problemas
+        session.clear()
         return redirect('/')
     
     # Guardar el token en la sesión
@@ -160,6 +174,8 @@ def callback():
     except Exception as e:
         logger.error(f"Error getting user profile: {str(e)}")
         flash(f"Error recuperando el perfil de usuario: {str(e)}")
+        # Limpiar sesión
+        session.clear()
         return redirect('/')
     
     # Guardar el token para este client_id
@@ -180,12 +196,13 @@ def callback():
     except Exception as e:
         logger.error(f"Error saving token: {str(e)}")
         flash(f"Error guardando el token: {str(e)}")
+        # Limpiar sesión
+        session.clear()
         return redirect('/')
     
     # Redirigir a la página de dashboard
-    logger.debug("Redirecting to dashboard")
+    logger.debug(f"Redirecting to dashboard with client_id: {client_id}")
     return redirect('/dashboard')
-
 @auth_bp.route('/logout')
 def logout():
     """Cierra la sesión del usuario"""
