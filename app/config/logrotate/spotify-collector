@@ -1,0 +1,11 @@
+/var/log/spotify-collector*.log {
+    weekly
+    rotate 1
+    compress
+    missingok
+    notifempty
+    create 0640 ec2-user ec2-user
+    postrotate
+        systemctl restart spotify-collector.timer
+    endscript
+}
