@@ -44,6 +44,7 @@ class SpotifyUserCollector:
         self.credentials_file = credentials_file
         self.output_base_dir = output_base_dir
         self.user_id = None
+        self.timeout = 20  # Timeout más largo (20 segundos en lugar de 5)
         
         # Cargar credenciales desde el archivo JSON
         try:
@@ -73,6 +74,11 @@ class SpotifyUserCollector:
         # Configurar la autenticación de Spotify
         try:
             self.sp = self._setup_spotify_client()
+            # Configuramos un tiempo de espera más largo para las solicitudes
+            if hasattr(self.sp, 'client') and hasattr(self.sp.client, 'timeout'):
+                self.sp.client.timeout = self.timeout
+                logger.info(f"Timeout configurado a {self.timeout} segundos para {self.user_id}")
+            
             # Si no tenemos user_id en el archivo, obténerlo del perfil
             if not self.user_id:
                 user_profile = self.sp.current_user()
@@ -139,9 +145,27 @@ class SpotifyUserCollector:
     def get_recently_played(self):
         """Obtiene las canciones reproducidas recientemente por el usuario"""
         try:
-            results = self.sp.current_user_recently_played(limit=50)
-            logger.info(f"Obtenidas {len(results['items'])} canciones recientes para {self.user_id}")
-            return results['items']
+            # Aumentar el timeout y agregar reintentos
+            self.sp.client.timeout = 20  # Aumentar de 5 a 20 segundos
+            
+            # Implementar reintentos simples
+            max_retries = 3
+            retry_delay = 5  # segundos
+            
+            for attempt in range(max_retries):
+                try:
+                    results = self.sp.current_user_recently_played(limit=50)
+                    logger.info(f"Obtenidas {len(results['items'])} canciones recientes para {self.user_id}")
+                    return results['items']
+                except Exception as e:
+                    if "timeout" in str(e).lower() and attempt < max_retries - 1:
+                        logger.warning(f"Timeout al obtener canciones para {self.user_id}, reintento {attempt+1}/{max_retries} en {retry_delay} segundos")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2  # Backoff exponencial
+                    else:
+                        # Si no es timeout o es el último intento, propagar el error
+                        raise
+                        
         except Exception as e:
             logger.error(f"Error al obtener canciones recientes para {self.user_id}: {e}")
             return []
@@ -226,13 +250,21 @@ class SpotifyMultiUserCollector:
         files = self.get_user_credentials_files()
         results = []
         
-        for file in files:
+        # Añadir un retraso entre usuarios para evitar sobrecarga de la API
+        delay_between_users = 1  # segundos
+        
+        for i, file in enumerate(files):
             try:
-                logger.info(f"Procesando usuario con archivo: {os.path.basename(file)}")
+                logger.info(f"Procesando usuario con archivo: {os.path.basename(file)} ({i+1}/{len(files)})")
                 collector = SpotifyUserCollector(file, self.output_base_dir)
                 result = collector.run_once()
                 if result:
                     results.append(result)
+                
+                # Añadir un retraso entre usuarios para evitar sobrecarga (excepto para el último)
+                if i < len(files) - 1:
+                    time.sleep(delay_between_users)
+                    
             except Exception as e:
                 logger.error(f"Error procesando usuario {os.path.basename(file)}: {e}")
         
