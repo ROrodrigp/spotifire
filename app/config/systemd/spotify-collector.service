@@ -1,0 +1,16 @@
+
+[Unit]
+Description=Spotify Periodic Data Collector Service
+After=network.target
+
+[Service]
+Type=oneshot
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/home/ec2-user/spotifire
+ExecStart=/home/ec2-user/spotifire/venv/bin/python /home/ec2-user/spotifire/scripts/spotify_periodic_collector.py --users_dir /home/ec2-user/spotifire/data/users_data --output_base_dir /home/ec2-user/spotifire/data/collected_data --once
+StandardOutput=append:/var/log/spotify-collector.log
+StandardError=append:/var/log/spotify-collector.error.log
+
+[Install]
+WantedBy=multi-user.target
