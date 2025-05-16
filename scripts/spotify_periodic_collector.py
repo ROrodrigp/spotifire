@@ -71,25 +71,28 @@ class SpotifyUserCollector:
         os.makedirs(self.user_dir, exist_ok=True)
         logger.info(f"Directorio para el usuario configurado: {self.user_dir}")
         
-        # Configurar la autenticación de Spotify
+        # Configurar la autenticación de Spotify con mejor manejo de errores
         try:
             self.sp = self._setup_spotify_client()
-            # Configuramos un tiempo de espera más largo para las solicitudes
-            if hasattr(self.sp, 'client') and hasattr(self.sp.client, 'timeout'):
-                self.sp.client.timeout = self.timeout
-                logger.info(f"Timeout configurado a {self.timeout} segundos para {self.user_id}")
             
             # Si no tenemos user_id en el archivo, obténerlo del perfil
             if not self.user_id:
-                user_profile = self.sp.current_user()
-                self.user_id = user_profile['id']
-                # Actualizar el archivo JSON con el user_id
-                self.credentials['user_id'] = self.user_id
-                with open(credentials_file, 'w') as f:
-                    json.dump(self.credentials, f)
-                # Actualizar el directorio del usuario
-                self.user_dir = os.path.join(self.output_base_dir, self.user_id)
-                os.makedirs(self.user_dir, exist_ok=True)
+                try:
+                    user_profile = self.sp.current_user()
+                    self.user_id = user_profile['id']
+                    # Actualizar el archivo JSON con el user_id
+                    self.credentials['user_id'] = self.user_id
+                    with open(credentials_file, 'w') as f:
+                        json.dump(self.credentials, f)
+                    # Actualizar el directorio del usuario
+                    self.user_dir = os.path.join(self.output_base_dir, self.user_id)
+                    os.makedirs(self.user_dir, exist_ok=True)
+                    logger.info(f"ID de usuario obtenido y guardado: {self.user_id}")
+                except Exception as e:
+                    # Si falla al obtener el perfil, usar un ID basado en el nombre del archivo
+                    fallback_id = os.path.basename(credentials_file).split('.')[0]
+                    logger.warning(f"No se pudo obtener el ID de usuario: {e}. Usando ID basado en archivo: {fallback_id}")
+                    self.user_id = fallback_id
             
             logger.info(f"Cliente de Spotify configurado para el usuario: {self.user_id}")
         except Exception as e:
@@ -140,13 +143,41 @@ class SpotifyUserCollector:
                     json.dump(self.credentials, f)
                 logger.info(f"Token actualizado para {self.user_id}")
         
-        return spotipy.Spotify(auth_manager=auth_manager)
+        # Instanciar cliente con el timeout ajustado
+        sp = spotipy.Spotify(auth_manager=auth_manager)
+        
+        # Intentar configurar timeouts directamente en la sesión requests subyacente
+        try:
+            # Detectar y configurar el timeout en la estructura correcta
+            if hasattr(sp, '_session'):
+                sp._session.timeout = self.timeout
+                logger.info(f"Timeout configurado a {self.timeout} segundos para {self.user_id} (via _session)")
+            elif hasattr(sp, '_auth') and hasattr(sp._auth, 'session'):
+                sp._auth.session.timeout = self.timeout
+                logger.info(f"Timeout configurado a {self.timeout} segundos para {self.user_id} (via _auth.session)")
+        except Exception as e:
+            logger.warning(f"No se pudo configurar el timeout para {self.user_id}: {e}")
+        
+        return sp
     
     def get_recently_played(self):
         """Obtiene las canciones reproducidas recientemente por el usuario"""
         try:
-            # Aumentar el timeout y agregar reintentos
-            self.sp.client.timeout = 20  # Aumentar de 5 a 20 segundos
+            # Configurar timeout en el objeto de sesión subyacente
+            # Este enfoque es más compatible con diferentes versiones de Spotipy
+            try:
+                if hasattr(self.sp, '_session'):
+                    self.sp._session.timeout = 20
+                    logger.info(f"Timeout configurado a 20 segundos para {self.user_id} usando _session")
+                elif hasattr(self.sp, '_auth'):
+                    # Algunas versiones utilizan una estructura más anidada
+                    if hasattr(self.sp._auth, 'session'):
+                        self.sp._auth.session.timeout = 20
+                        logger.info(f"Timeout configurado a 20 segundos para {self.user_id} usando _auth.session")
+                else:
+                    logger.warning(f"No se pudo configurar el timeout para {self.user_id}: estructura no reconocida")
+            except Exception as e:
+                logger.warning(f"Error al configurar timeout para {self.user_id}: {e}")
             
             # Implementar reintentos simples
             max_retries = 3
@@ -162,8 +193,17 @@ class SpotifyUserCollector:
                         logger.warning(f"Timeout al obtener canciones para {self.user_id}, reintento {attempt+1}/{max_retries} en {retry_delay} segundos")
                         time.sleep(retry_delay)
                         retry_delay *= 2  # Backoff exponencial
+                    elif "rate limiting" in str(e).lower() and attempt < max_retries - 1:
+                        # Agregar manejo específico para rate limiting
+                        logger.warning(f"Rate limiting para {self.user_id}, reintento {attempt+1}/{max_retries} en {retry_delay} segundos")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2
+                    elif attempt < max_retries - 1:
+                        # Para cualquier otro error, intentar de nuevo pero con menos reintento
+                        logger.warning(f"Error ({str(e)}) para {self.user_id}, reintento {attempt+1}/{max_retries} en {retry_delay} segundos")
+                        time.sleep(retry_delay)
                     else:
-                        # Si no es timeout o es el último intento, propagar el error
+                        # Si es el último intento, propagar el error
                         raise
                         
         except Exception as e:
