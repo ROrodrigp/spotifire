@@ -8,8 +8,8 @@ User=ec2-user
 Group=ec2-user
 WorkingDirectory=/home/ec2-user/spotifire
 ExecStart=/usr/bin/python /home/ec2-user/spotifire/scripts/spotify_s3_uploader.py --data-dir /home/ec2-user/spotifire/data/collected_data --bucket itam-analytics-ragp --prefix spotifire/raw
-StandardOutput=append:/var/log/spotifire/spotify-s3-uploader.log
-StandardError=append:/var/log/spotifire/spotify-s3-uploader.error.log
+StandardOutput=append:/var/log/spotify-s3-uploader.log
+StandardError=append:/var/log/spotify-s3-uploader.error.log
 
 [Install]
 WantedBy=multi-user.target
