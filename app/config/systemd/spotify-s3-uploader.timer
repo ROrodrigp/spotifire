@@ -1,0 +1,15 @@
+[Unit]
+Description=Run Spotify S3 Uploader 1 hour after collector runs
+Requires=spotify-s3-uploader.service
+
+[Timer]
+Unit=spotify-s3-uploader.service
+# Run 1 hour after spotify-collector runs (which runs at 00, 04, 08, 12, 16, 20)
+# So this will run at 01:00, 05:00, 09:00, 13:00, 17:00, and 21:00
+OnCalendar=*-*-* 01,05,09,13,17,21:00:00
+# Add some randomization to avoid resource contention
+RandomizedDelaySec=120
+Persistent=true
+
+[Install]
+WantedBy=timers.target
