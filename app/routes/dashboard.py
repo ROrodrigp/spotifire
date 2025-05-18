@@ -5,6 +5,7 @@ from datetime import datetime
 from flask import Blueprint, session, redirect, render_template, flash, jsonify
 import spotipy
 from app.services.spotify import get_spotify_oauth, refresh_token, get_user_data, validate_token, load_user_token
+from app.services.insights import InsightsService
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -12,7 +13,7 @@ dashboard_bp = Blueprint('dashboard', __name__)
 
 @dashboard_bp.route('/dashboard')
 def dashboard():
-    """Muestra el dashboard con los datos de Spotify"""
+    """Muestra el dashboard con los datos de Spotify e insights personalizados"""
     logger.debug("Dashboard endpoint accessed")
     
     # Verificar que tenemos las credenciales en la sesión
@@ -57,13 +58,21 @@ def dashboard():
     try:
         data = get_user_data(token_info['access_token'])
         user_display_name = token_info.get('display_name', 'Usuario')
+        user_id = token_info.get('user_id')
+        
+        # Obtener insights personalizados
+        insights_service = InsightsService(user_id)
+        dashboard_insights = insights_service.get_dashboard_insights()
+        next_milestone = insights_service.get_next_milestone()
         
         # Renderizar la plantilla con los datos
         return render_template(
             'dashboard/index.html',
             user_name=user_display_name,
             recent_tracks=data['recent_tracks'],
-            top_artists=data['top_artists']
+            top_artists=data['top_artists'],
+            insights=dashboard_insights,
+            next_milestone=next_milestone
         )
     except Exception as e:
         logger.error(f"Error obteniendo datos de Spotify: {str(e)}")
@@ -109,9 +118,37 @@ def actualizar_datos():
     # Obtener datos de Spotify
     try:
         data = get_user_data(token_info['access_token'])
-        return jsonify(data)
+        user_id = token_info.get('user_id')
+        
+        # Obtener insights actualizados
+        insights_service = InsightsService(user_id)
+        dashboard_insights = insights_service.get_dashboard_insights()
+        next_milestone = insights_service.get_next_milestone()
+        
+        return jsonify({
+            'recent_tracks': data['recent_tracks'],
+            'top_artists': data['top_artists'],
+            'insights': dashboard_insights,
+            'next_milestone': next_milestone
+        })
     except Exception as e:
         logger.error(f"Error obteniendo datos de Spotify: {str(e)}")
         return jsonify({
             'error': f'Error obteniendo datos: {str(e)}'
         }), 500
+
+@dashboard_bp.route('/insights')
+def insights_page():
+    """Página dedicada para insights detallados (placeholder para futura implementación)"""
+    logger.debug("Insights page accessed")
+    
+    # Verificar autenticación
+    client_id = session.get('client_id')
+    if not client_id:
+        flash("Se requiere iniciar sesión")
+        return redirect('/')
+    
+    # Por ahora, redirigir al dashboard principal
+    # En el futuro, esta será una página separada con análisis detallados
+    flash("Los insights detallados estarán disponibles próximamente")
+    return redirect('/dashboard')

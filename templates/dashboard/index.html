@@ -33,14 +33,21 @@
         <a href="#" class="sidebar-item active">
             <i class="bi bi-house-door sidebar-icon"></i> Inicio
         </a>
-        <a href="#" class="sidebar-item">
-            <i class="bi bi-music-note-list sidebar-icon"></i> Canciones recientes
+        <a href="#" class="sidebar-item disabled" onclick="showComingSoon('Mi Actividad')">
+            <i class="bi bi-music-note-list sidebar-icon"></i> Mi Actividad
+            <i class="bi bi-clock sidebar-icon-secondary"></i>
         </a>
-        <a href="#" class="sidebar-item">
-            <i class="bi bi-person-badge sidebar-icon"></i> Artistas favoritos
+        <a href="#" class="sidebar-item disabled" onclick="showComingSoon('Mis Tendencias')">
+            <i class="bi bi-graph-up sidebar-icon"></i> Mis Tendencias
+            <i class="bi bi-clock sidebar-icon-secondary"></i>
         </a>
-        <a href="#" class="sidebar-item">
-            <i class="bi bi-graph-up sidebar-icon"></i> Estadísticas
+        <a href="#" class="sidebar-item disabled" onclick="showComingSoon('Descubrimientos')">
+            <i class="bi bi-compass sidebar-icon"></i> Descubrimientos
+            <i class="bi bi-clock sidebar-icon-secondary"></i>
+        </a>
+        <a href="#" class="sidebar-item disabled" onclick="showComingSoon('Momentos Musicales')">
+            <i class="bi bi-calendar-event sidebar-icon"></i> Momentos Musicales
+            <i class="bi bi-clock sidebar-icon-secondary"></i>
         </a>
         <a href="#" class="sidebar-item">
             <i class="bi bi-gear sidebar-icon"></i> Configuración
@@ -51,8 +58,129 @@
     <div class="col-lg-10 content-area">
         <!-- Welcome Banner -->
         <div class="welcome-banner">
-            <h3 class="welcome-message">¡Bienvenido, {{ user_name }}!</h3>
-            <button class="btn btn-dark">Actualizar datos</button>
+            <div>
+                <h3 class="welcome-message">¡Bienvenido, {{ user_name }}!</h3>
+                <p class="welcome-subtitle">Estamos recolectando tus datos de Spotify para generar insights personalizados.</p>
+            </div>
+            <button class="btn btn-dark" onclick="updateDashboard()">
+                <span id="update-btn-text">Actualizar datos</span>
+                <span id="update-spinner" class="spinner-border spinner-border-sm d-none ms-2" role="status"></span>
+            </button>
+        </div>
+        
+        <!-- Insights Section -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h3 class="section-title mb-3">Insights Personalizados</h3>
+                <div class="row">
+                    {% for insight in insights %}
+                        <div class="col-md-4 mb-3">
+                            {% if insight.type == 'locked' %}
+                                <!-- Locked Insight Card -->
+                                <div class="card insight-card locked-insight">
+                                    <div class="insight-overlay">
+                                        <div class="insight-overlay-content">
+                                            <i class="bi bi-clock-fill insight-clock-icon"></i>
+                                            <h5 class="insight-overlay-title">
+                                                {% if insight.unlock_in_days == 0 %}
+                                                    Disponible hoy
+                                                {% else %}
+                                                    Disponible en {{ insight.unlock_in_days }} día{{ 's' if insight.unlock_in_days != 1 else '' }}
+                                                {% endif %}
+                                            </h5>
+                                            <p class="insight-overlay-text">Necesitamos más datos para generar este insight</p>
+                                            <div class="insight-progress">
+                                                <div class="insight-progress-bar" style="width: {{ insight.progress }}%"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="card-body insight-preview">
+                                        <h6 class="insight-title">{{ insight.title }}</h6>
+                                        <p class="insight-description">{{ insight.description }}</p>
+                                        {% if insight.title == 'Patrones básicos de escucha' %}
+                                            <!-- Preview de gráfico horario -->
+                                            <div class="hourly-preview mt-3">
+                                                {% for hour in range(24) %}
+                                                    <div class="hour-bar" style="height: {{ 20 + (hour * 3) % 60 }}px"></div>
+                                                {% endfor %}
+                                            </div>
+                                        {% elif insight.title == 'Distribución de géneros musicales' %}
+                                            <!-- Preview de géneros -->
+                                            <div class="genre-preview mt-3">
+                                                <span class="genre-tag">Pop 45%</span>
+                                                <span class="genre-tag">Rock 30%</span>
+                                                <span class="genre-tag">R&B 15%</span>
+                                                <span class="genre-tag">Hip Hop 10%</span>
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            {% elif insight.type == 'hourly_patterns' %}
+                                <!-- Hourly Patterns Insight -->
+                                <div class="card insight-card">
+                                    <div class="card-body">
+                                        <h6 class="insight-title">{{ insight.title }}</h6>
+                                        <p class="insight-description">{{ insight.description }}</p>
+                                        <div class="hourly-chart mt-3">
+                                            {% for hour_data in insight.data %}
+                                                <div class="hour-bar-active" 
+                                                     style="height: {{ hour_data.activity * 0.8 }}px"
+                                                     title="{{ hour_data.hour }}:00 - {{ hour_data.activity }}% actividad">
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                </div>
+                            {% elif insight.type == 'genre_distribution' %}
+                                <!-- Genre Distribution Insight -->
+                                <div class="card insight-card">
+                                    <div class="card-body">
+                                        <h6 class="insight-title">{{ insight.title }}</h6>
+                                        <p class="insight-description">{{ insight.description }}</p>
+                                        <div class="genre-chart mt-3">
+                                            {% for genre in insight.data %}
+                                                <div class="genre-bar">
+                                                    <span class="genre-name">{{ genre.name }}</span>
+                                                    <div class="genre-bar-container">
+                                                        <div class="genre-bar-fill {{ genre.color }}" style="width: {{ genre.percentage }}%"></div>
+                                                    </div>
+                                                    <span class="genre-percentage">{{ genre.percentage }}%</span>
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                </div>
+                            {% elif insight.type == 'weekly_activity' %}
+                                <!-- Weekly Activity Insight -->
+                                <div class="card insight-card">
+                                    <div class="card-body">
+                                        <h6 class="insight-title">{{ insight.title }}</h6>
+                                        <p class="insight-description">{{ insight.description }}</p>
+                                        <div class="weekly-stats mt-3">
+                                            <div class="stat-item">
+                                                <span class="stat-label">Esta semana</span>
+                                                <span class="stat-value">{{ insight.current_week_minutes }} min</span>
+                                            </div>
+                                            <div class="stat-item">
+                                                <span class="stat-label">Semana anterior</span>
+                                                <span class="stat-value">{{ insight.previous_week_minutes }} min</span>
+                                            </div>
+                                            <div class="trend-indicator trend-{{ insight.trend }}">
+                                                {% if insight.trend == 'up' %}
+                                                    <i class="bi bi-arrow-up-circle"></i>
+                                                {% else %}
+                                                    <i class="bi bi-arrow-down-circle"></i>
+                                                {% endif %}
+                                                {{ "%.1f"|format(insight.change_percentage) }}%
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
         </div>
         
         <div class="row">
@@ -62,7 +190,7 @@
                     <div class="card-header">
                         <i class="bi bi-music-note-list me-2"></i> Canciones reproducidas recientemente
                     </div>
-                    <div class="card-body">
+                    <div class="card-body" id="recent-tracks-container">
                         {% if recent_tracks %}
                             {% for track in recent_tracks %}
                                 <div class="track-item">
@@ -90,7 +218,7 @@
                     <div class="card-header">
                         <i class="bi bi-person-badge me-2"></i> Tus artistas top
                     </div>
-                    <div class="card-body">
+                    <div class="card-body" id="top-artists-container">
                         {% if top_artists %}
                             {% for artist in top_artists %}
                                 <div class="artist-item">
@@ -103,7 +231,6 @@
                                                 Sin géneros definidos
                                             {% endif %}
                                         </div>
-                                        <!-- Usar una clase predefinida en lugar de estilo inline -->
                                         <div class="popularity-bar popularity-{{ (artist.popularity//10)*10 if artist.popularity is defined else 50 }}"></div>
                                     </div>
                                 </div>
@@ -115,10 +242,170 @@
                 </div>
             </div>
         </div>
+        
+        <!-- Next Milestone Section -->
+        {% if next_milestone %}
+        <div class="next-milestone mt-4">
+            <div class="milestone-card">
+                <div class="milestone-content">
+                    <i class="bi bi-trophy-fill milestone-icon"></i>
+                    <div class="milestone-text">
+                        <h4>¡Hay mucho más por venir!</h4>
+                        <p>Sigue escuchando música en Spotify y regresa en unos días para descubrir insights personalizados sobre tus hábitos musicales.</p>
+                        <div class="milestone-next">
+                            <i class="bi bi-clock"></i>
+                            <span>Próximo insight: {{ next_milestone.name }} 
+                            {% if next_milestone.unlock_in_days == 0 %}
+                                disponible hoy
+                            {% else %}
+                                en {{ next_milestone.unlock_in_days }} día{{ 's' if next_milestone.unlock_in_days != 1 else '' }}
+                            {% endif %}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Modal para secciones próximamente -->
+<div class="modal fade" id="comingSoonModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-white">
+            <div class="modal-header">
+                <h5 class="modal-title" id="comingSoonModalLabel">Próximamente</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p id="comingSoonModalText"></p>
+                <p>Esta funcionalidad estará disponible una vez que hayamos recolectado suficientes datos de tu actividad musical.</p>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+<script>
+// Función específica para mostrar modal de "próximamente"
+function showComingSoon(sectionName) {
+    document.getElementById('comingSoonModalText').textContent = 
+        `La sección "${sectionName}" estará disponible próximamente.`;
+    const modal = new bootstrap.Modal(document.getElementById('comingSoonModal'));
+    modal.show();
+}
+
+// Función para actualizar los datos del dashboard
+function updateDashboard() {
+    const updateBtn = document.getElementById('update-btn-text');
+    const spinner = document.getElementById('update-spinner');
+    
+    // Mostrar spinner
+    updateBtn.textContent = 'Actualizando...';
+    spinner.classList.remove('d-none');
+    
+    fetch('/actualizar_datos', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        credentials: 'same-origin'
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Error al actualizar datos');
+        }
+        return response.json();
+    })
+    .then(data => {
+        // Actualizar las secciones con los nuevos datos
+        updateRecentTracks(data.recent_tracks);
+        updateTopArtists(data.top_artists);
+        updateInsights(data.insights);
+        
+        // Mostrar mensaje de éxito
+        showAlert('Datos actualizados correctamente', 'success');
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showAlert('Error al actualizar los datos: ' + error.message, 'danger');
+    })
+    .finally(() => {
+        // Ocultar spinner
+        updateBtn.textContent = 'Actualizar datos';
+        spinner.classList.add('d-none');
+    });
+}
+
+// Función para actualizar la lista de canciones recientes
+function updateRecentTracks(tracks) {
+    const container = document.getElementById('recent-tracks-container');
+    if (!container || !tracks || tracks.length === 0) return;
+    
+    container.innerHTML = tracks.map(track => `
+        <div class="track-item">
+            <div class="track-details">
+                <div class="track-title">${track.name}</div>
+                <div class="track-artist">${track.artist}</div>
+            </div>
+            <div class="track-time">
+                ${track.played_at || ''}
+            </div>
+        </div>
+    `).join('');
+}
+
+// Función para actualizar la lista de artistas top
+function updateTopArtists(artists) {
+    const container = document.getElementById('top-artists-container');
+    if (!container || !artists || artists.length === 0) return;
+    
+    container.innerHTML = artists.map(artist => {
+        const genres = artist.genres && artist.genres.length > 0 
+            ? artist.genres.join(', ') 
+            : 'Sin géneros definidos';
+        const popularity = Math.floor((artist.popularity || 50) / 10) * 10;
+        
+        return `
+            <div class="artist-item">
+                <div class="artist-details">
+                    <div class="artist-name">${artist.name}</div>
+                    <div class="artist-genre">${genres}</div>
+                    <div class="popularity-bar popularity-${popularity}"></div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Función para actualizar los insights
+function updateInsights(insights) {
+    // Esta función se puede expandir en el futuro para actualizar dinámicamente
+    // los insights cuando cambien los datos del usuario
+    console.log('Insights actualizados:', insights);
+}
+
+// Función para mostrar alertas
+function showAlert(message, type) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertDiv.role = 'alert';
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    const contentArea = document.querySelector('.content-area');
+    contentArea.insertBefore(alertDiv, contentArea.firstChild);
+    
+    // Auto remover después de 5 segundos
+    setTimeout(() => {
+        alertDiv.classList.remove('show');
+        setTimeout(() => alertDiv.remove(), 150);
+    }, 5000);
+}
+</script>
 {% endblock %}

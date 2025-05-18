@@ -1,111 +1,344 @@
-.sidebar {
-    background-color: #121212;
-    min-height: calc(100vh - 56px);
-    padding: 20px 0;
-}
+/* Estilos adicionales para la nueva versión del dashboard */
 
-.sidebar-item {
-    padding: 10px 20px;
-    color: #b3b3b3;
-    display: block;
-    text-decoration: none;
-    transition: all 0.3s;
-}
-
-.sidebar-item:hover, .sidebar-item.active {
-    color: #ffffff;
-    background-color: #282828;
-}
-
-.sidebar-icon {
-    margin-right: 10px;
-}
-
-.content-area {
-    padding: 20px;
-}
-
-.card {
-    background-color: #282828;
-    border: none;
-    margin-bottom: 20px;
-    border-radius: 8px;
-}
-
-.card-header {
-    background-color: #333;
-    color: #1DB954;
-    font-weight: bold;
-    border-bottom: none;
-}
-
-.list-group-item {
-    background-color: #282828;
-    border-color: #333;
-    color: #ffffff;
-}
-
-.track-item, .artist-item {
-    display: flex;
-    align-items: center;
-    padding: 10px 0;
-    border-bottom: 1px solid #333;
-}
-
-.track-item:last-child, .artist-item:last-child {
-    border-bottom: none;
-}
-
-.track-details, .artist-details {
-    flex-grow: 1;
-}
-
-.track-title, .artist-name {
-    font-weight: bold;
-    margin-bottom: 3px;
-    color: #1DB954; /* Cambiado de blanco a verde Spotify */
-}
-
-.track-artist, .artist-genre {
-    color: #b3b3b3;
-    font-size: 0.9rem;
-}
-
-.track-time {
-    color: #b3b3b3;
-    font-size: 0.8rem;
-    text-align: right;
-}
-
-.popularity-bar {
-    height: 4px;
-    background-color: #1DB954;
-    margin-top: 5px;
-}
-
-/* Clases de popularidad predefinidas */
-.popularity-0 { width: 0%; }
-.popularity-10 { width: 10%; }
-.popularity-20 { width: 20%; }
-.popularity-30 { width: 30%; }
-.popularity-40 { width: 40%; }
-.popularity-50 { width: 50%; }
-.popularity-60 { width: 60%; }
-.popularity-70 { width: 70%; }
-.popularity-80 { width: 80%; }
-.popularity-90 { width: 90%; }
-.popularity-100 { width: 100%; }
-
+/* Estilos para el banner de bienvenida mejorado */
 .welcome-banner {
-    background-color: #1DB954;
-    padding: 15px;
-    border-radius: 8px;
-    margin-bottom: 20px;
+    background: linear-gradient(135deg, #1DB954 0%, #1ed760 100%);
+    padding: 24px;
+    border-radius: 12px;
+    margin-bottom: 30px;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    box-shadow: 0 4px 12px rgba(29, 185, 84, 0.3);
 }
 
 .welcome-message {
     margin: 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.welcome-subtitle {
+    margin: 4px 0 0 0;
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+/* Estilos para sidebar mejorado */
+.sidebar-item.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    position: relative;
+}
+
+.sidebar-icon-secondary {
+    font-size: 0.8rem;
+    margin-left: auto;
+    color: #b3b3b3;
+}
+
+/* Estilos para la sección de insights */
+.section-title {
+    color: #1DB954;
+    font-weight: 600;
+    margin-bottom: 20px;
+}
+
+/* Estilos para tarjetas de insights */
+.insight-card {
+    background-color: #282828;
+    border: none;
+    border-radius: 12px;
+    transition: transform 0.2s, box-shadow 0.2s;
+    height: 280px;
+}
+
+.insight-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.insight-card.locked-insight {
+    position: relative;
+    overflow: hidden;
+}
+
+.insight-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    backdrop-filter: blur(3px);
+}
+
+.insight-overlay-content {
+    text-align: center;
+    padding: 20px;
+}
+
+.insight-clock-icon {
+    font-size: 2rem;
+    color: #1DB954;
+    margin-bottom: 12px;
+}
+
+.insight-overlay-title {
+    color: white;
+    margin-bottom: 8px;
+    font-size: 1.1rem;
+}
+
+.insight-overlay-text {
+    color: #b3b3b3;
+    margin-bottom: 16px;
+    font-size: 0.9rem;
+}
+
+.insight-progress {
+    width: 100%;
+    height: 6px;
+    background-color: #444;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.insight-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #1DB954, #1ed760);
+    transition: width 0.3s ease;
+}
+
+.insight-preview {
+    opacity: 0.3;
+}
+
+.insight-title {
+    color: #1DB954;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.insight-description {
+    color: #b3b3b3;
+    font-size: 0.9rem;
+    margin-bottom: 16px;
+}
+
+/* Estilos para preview de gráficos horarios */
+.hourly-preview,
+.hourly-chart {
+    display: flex;
+    gap: 2px;
+    align-items: flex-end;
+    height: 80px;
+    padding: 10px 0;
+}
+
+.hour-bar,
+.hour-bar-active {
+    background-color: #444;
+    width: 8px;
+    border-radius: 2px;
+    min-height: 20px;
+    transition: background-color 0.3s;
+}
+
+.hour-bar-active {
+    background-color: #1DB954;
+    cursor: pointer;
+}
+
+.hour-bar-active:hover {
+    background-color: #1ed760;
+}
+
+/* Estilos para preview de géneros */
+.genre-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.genre-tag {
+    background-color: #444;
+    color: #b3b3b3;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+}
+
+.genre-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.genre-name {
+    min-width: 60px;
+    font-size: 0.85rem;
+    color: #ffffff;
+}
+
+.genre-bar-container {
+    flex: 1;
+    height: 8px;
+    background-color: #444;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.genre-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.5s ease;
+}
+
+.genre-bar-fill.bg-green-500 {
+    background-color: #1DB954;
+}
+
+.genre-bar-fill.bg-blue-500 {
+    background-color: #3B82F6;
+}
+
+.genre-bar-fill.bg-purple-500 {
+    background-color: #A855F7;
+}
+
+.genre-bar-fill.bg-yellow-500 {
+    background-color: #EAB308;
+}
+
+.genre-bar-fill.bg-gray-500 {
+    background-color: #6B7280;
+}
+
+.genre-percentage {
+    min-width: 35px;
+    font-size: 0.85rem;
+    color: #b3b3b3;
+    text-align: right;
+}
+
+/* Estilos para estadísticas semanales */
+.weekly-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.stat-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #444;
+}
+
+.stat-item:last-child {
+    border-bottom: none;
+}
+
+.stat-label {
+    color: #b3b3b3;
+    font-size: 0.9rem;
+}
+
+.stat-value {
+    color: white;
+    font-weight: 600;
+}
+
+.trend-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    font-size: 1.1rem;
+}
+
+.trend-indicator.trend-up {
+    color: #1DB954;
+}
+
+.trend-indicator.trend-down {
+    color: #EF4444;
+}
+
+/* Estilos para próximo hito */
+.next-milestone {
+    margin-top: 30px;
+}
+
+.milestone-card {
+    background: linear-gradient(135deg, #282828 0%, #333 100%);
+    border-radius: 12px;
+    padding: 24px;
+    border: 1px solid #444;
+}
+
+.milestone-content {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.milestone-icon {
+    font-size: 2.5rem;
+    color: #1DB954;
+    flex-shrink: 0;
+}
+
+.milestone-text h4 {
+    color: white;
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+
+.milestone-text p {
+    color: #b3b3b3;
+    margin-bottom: 12px;
+    line-height: 1.5;
+}
+
+.milestone-next {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #1DB954;
+    font-weight: 500;
+}
+
+.milestone-next i {
+    font-size: 1.1rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .welcome-banner {
+        flex-direction: column;
+        text-align: center;
+        gap: 16px;
+    }
+    
+    .milestone-content {
+        flex-direction: column;
+        text-align: center;
+        gap: 16px;
+    }
+    
+    .milestone-icon {
+        font-size: 2rem;
+    }
+    
+    .insight-card {
+        height: auto;
+        min-height: 280px;
+    }
 }
