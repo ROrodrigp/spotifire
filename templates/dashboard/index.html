@@ -4,7 +4,6 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.min.css">
 <style>
 /* Estilos específicos para los nuevos insights */
 .insight-card {
@@ -57,6 +56,11 @@
     position: relative;
     height: 300px;
     margin: 15px 0;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .chart-container.small {
@@ -65,6 +69,12 @@
 
 .chart-container.medium {
     height: 250px;
+}
+
+.chart-loading {
+    color: #b3b3b3;
+    text-align: center;
+    font-style: italic;
 }
 
 .metric-summary {
@@ -174,6 +184,18 @@
     font-style: italic;
 }
 
+/* Debug styles */
+.debug-info {
+    background: rgba(255, 255, 0, 0.1);
+    border: 1px solid #ffff00;
+    padding: 10px;
+    margin: 10px 0;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 12px;
+    color: #ffff00;
+}
+
 /* Responsive design */
 @media (max-width: 768px) {
     .insight-card {
@@ -258,7 +280,7 @@
             <div>
                 <h3 class="welcome-message">¡Hola, {{ user_name }}!</h3>
                 <p class="mb-0" style="color: rgba(255,255,255,0.8);">
-                    Descubre los patrones ocultos en tu música
+                    Tu estado musical de esta semana
                 </p>
             </div>
             <button class="btn btn-dark" onclick="refreshAllInsights()">
@@ -268,6 +290,14 @@
 
         {% if insights_available %}
         
+        <!-- Debug Info -->
+        <div class="debug-info">
+            <strong>Debug Info:</strong><br>
+            Chart.js loaded: <span id="chart-debug">checking...</span><br>
+            Canvas elements: <span id="canvas-debug">checking...</span><br>
+            Data available: {{ advanced_insights|length if advanced_insights else 0 }} insights
+        </div>
+        
         <!-- Insights Principales -->
         <div class="row">
             <!-- Artistas Más Escuchados -->
@@ -276,13 +306,14 @@
                     <div class="insight-header">
                         <i class="bi bi-star-fill insight-icon"></i>
                         <h4 class="insight-title">Tus Artistas Favoritos</h4>
-                        <span class="insight-period">últimos 90 días</span>
+                        <span class="insight-period">última semana</span>
                     </div>
                     
                     <div id="top-artists-content">
                         {% if advanced_insights.top_artists %}
                             <div class="chart-container medium">
                                 <canvas id="topArtistsChart"></canvas>
+                                <div class="chart-loading" id="chart-loading-1">Cargando gráfico...</div>
                             </div>
                             
                             <div class="metric-summary">
@@ -329,6 +360,7 @@
                         {% if advanced_insights.daily_pattern %}
                             <div class="chart-container medium">
                                 <canvas id="dailyPatternChart"></canvas>
+                                <div class="chart-loading" id="chart-loading-2">Cargando gráfico...</div>
                             </div>
                             
                             {% set peak_hour = advanced_insights.daily_pattern | max(attribute='play_count') %}
@@ -370,7 +402,7 @@
                     <div class="insight-header">
                         <i class="bi bi-calendar-week insight-icon"></i>
                         <h4 class="insight-title">Semana vs Fin de Semana</h4>
-                        <span class="insight-period">últimos 90 días</span>
+                        <span class="insight-period">últimos 7 días</span>
                     </div>
                     
                     <div id="weekly-pattern-content">
@@ -453,6 +485,7 @@
                         {% if advanced_insights.popularity_distribution %}
                             <div class="chart-container small">
                                 <canvas id="popularityChart"></canvas>
+                                <div class="chart-loading" id="chart-loading-3">Cargando gráfico...</div>
                             </div>
                             
                             {% set pop_data = advanced_insights.popularity_distribution %}
@@ -583,7 +616,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.js"></script>
 <script>
 // Variables globales para los gráficos
 let topArtistsChart = null;
@@ -597,210 +630,291 @@ const insightsData = {
     popularityDistribution: {{ advanced_insights.popularity_distribution | tojson if advanced_insights.popularity_distribution else '{}' }}
 };
 
+// Debug function
+function updateDebugInfo() {
+    const chartDebug = document.getElementById('chart-debug');
+    const canvasDebug = document.getElementById('canvas-debug');
+    
+    // Check Chart.js
+    if (typeof Chart !== 'undefined') {
+        chartDebug.textContent = 'YES ✓';
+        chartDebug.style.color = '#1DB954';
+    } else {
+        chartDebug.textContent = 'NO ✗';
+        chartDebug.style.color = '#ff6b6b';
+    }
+    
+    // Check canvas elements
+    const canvases = ['topArtistsChart', 'dailyPatternChart', 'popularityChart'];
+    const foundCanvases = canvases.filter(id => document.getElementById(id) !== null);
+    canvasDebug.textContent = `${foundCanvases.length}/${canvases.length} found`;
+    canvasDebug.style.color = foundCanvases.length === canvases.length ? '#1DB954' : '#ff6b6b';
+}
+
 // Inicializar gráficos cuando el DOM esté listo
 document.addEventListener('DOMContentLoaded', function() {
-    initializeCharts();
+    console.log('DOM Content Loaded');
+    updateDebugInfo();
+    
+    // Wait a bit for Chart.js to fully load
+    setTimeout(() => {
+        updateDebugInfo();
+        if (typeof Chart !== 'undefined') {
+            initializeCharts();
+        } else {
+            console.error('Chart.js no está disponible');
+        }
+    }, 1000);
+    
     setupSidebarNavigation();
 });
 
+function hideChartLoading(chartNumber) {
+    const loadingElement = document.getElementById(`chart-loading-${chartNumber}`);
+    if (loadingElement) {
+        loadingElement.style.display = 'none';
+    }
+}
+
 function initializeCharts() {
+    console.log('Initializing charts...');
+    console.log('Insights data:', insightsData);
+    
     // Gráfico de Artistas Top
     if (insightsData.topArtists && insightsData.topArtists.length > 0) {
+        console.log('Creating top artists chart');
         createTopArtistsChart();
+        hideChartLoading(1);
+    } else {
+        console.log('No top artists data available');
     }
     
     // Gráfico de Patrón Diario
     if (insightsData.dailyPattern && insightsData.dailyPattern.length > 0) {
+        console.log('Creating daily pattern chart');
         createDailyPatternChart();
+        hideChartLoading(2);
+    } else {
+        console.log('No daily pattern data available');
     }
     
     // Gráfico de Distribución de Popularidad
     if (Object.keys(insightsData.popularityDistribution).length > 0) {
+        console.log('Creating popularity chart');
         createPopularityChart();
+        hideChartLoading(3);
+    } else {
+        console.log('No popularity distribution data available');
     }
 }
 
 function createTopArtistsChart() {
     const ctx = document.getElementById('topArtistsChart');
-    if (!ctx) return;
+    if (!ctx) {
+        console.error('Canvas topArtistsChart not found');
+        return;
+    }
+    
+    console.log('Creating chart for canvas:', ctx);
     
     const artists = insightsData.topArtists.slice(0, 8); // Top 8 para mejor visualización
     
-    topArtistsChart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: artists.map(artist => artist.artist_name.length > 15 ? 
-                artist.artist_name.substring(0, 15) + '...' : artist.artist_name),
-            datasets: [{
-                label: 'Reproducciones',
-                data: artists.map(artist => artist.play_count),
-                backgroundColor: 'rgba(29, 185, 84, 0.8)',
-                borderColor: 'rgba(29, 185, 84, 1)',
-                borderWidth: 1,
-                borderRadius: 4
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: false
-                },
-                tooltip: {
-                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                    titleColor: '#1DB954',
-                    bodyColor: '#ffffff',
-                    borderColor: '#1DB954',
-                    borderWidth: 1
-                }
+    try {
+        topArtistsChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: artists.map(artist => artist.artist_name.length > 15 ? 
+                    artist.artist_name.substring(0, 15) + '...' : artist.artist_name),
+                datasets: [{
+                    label: 'Reproducciones',
+                    data: artists.map(artist => artist.play_count),
+                    backgroundColor: 'rgba(29, 185, 84, 0.8)',
+                    borderColor: 'rgba(29, 185, 84, 1)',
+                    borderWidth: 1,
+                    borderRadius: 4
+                }]
             },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        color: '#b3b3b3'
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
                     },
-                    grid: {
-                        color: 'rgba(255, 255, 255, 0.1)'
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: '#1DB954',
+                        bodyColor: '#ffffff',
+                        borderColor: '#1DB954',
+                        borderWidth: 1
                     }
                 },
-                x: {
-                    ticks: {
-                        color: '#b3b3b3',
-                        maxRotation: 45
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            color: '#b3b3b3'
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
                     },
-                    grid: {
-                        display: false
+                    x: {
+                        ticks: {
+                            color: '#b3b3b3',
+                            maxRotation: 45
+                        },
+                        grid: {
+                            display: false
+                        }
                     }
                 }
             }
-        }
-    });
+        });
+        console.log('Top artists chart created successfully');
+    } catch (error) {
+        console.error('Error creating top artists chart:', error);
+    }
 }
 
 function createDailyPatternChart() {
     const ctx = document.getElementById('dailyPatternChart');
-    if (!ctx) return;
+    if (!ctx) {
+        console.error('Canvas dailyPatternChart not found');
+        return;
+    }
     
     const hourlyData = insightsData.dailyPattern;
     
-    dailyPatternChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: hourlyData.map(item => item.hour_label),
-            datasets: [{
-                label: 'Reproducciones por Hora',
-                data: hourlyData.map(item => item.play_count),
-                borderColor: '#1DB954',
-                backgroundColor: 'rgba(29, 185, 84, 0.1)',
-                borderWidth: 2,
-                fill: true,
-                tension: 0.4,
-                pointBackgroundColor: '#1DB954',
-                pointBorderColor: '#ffffff',
-                pointBorderWidth: 2,
-                pointRadius: 4
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: false
-                },
-                tooltip: {
-                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                    titleColor: '#1DB954',
-                    bodyColor: '#ffffff',
+    try {
+        dailyPatternChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: hourlyData.map(item => item.hour_label),
+                datasets: [{
+                    label: 'Reproducciones por Hora',
+                    data: hourlyData.map(item => item.play_count),
                     borderColor: '#1DB954',
-                    borderWidth: 1
-                }
+                    backgroundColor: 'rgba(29, 185, 84, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4,
+                    pointBackgroundColor: '#1DB954',
+                    pointBorderColor: '#ffffff',
+                    pointBorderWidth: 2,
+                    pointRadius: 4
+                }]
             },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        color: '#b3b3b3'
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
                     },
-                    grid: {
-                        color: 'rgba(255, 255, 255, 0.1)'
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: '#1DB954',
+                        bodyColor: '#ffffff',
+                        borderColor: '#1DB954',
+                        borderWidth: 1
                     }
                 },
-                x: {
-                    ticks: {
-                        color: '#b3b3b3',
-                        callback: function(value, index) {
-                            // Mostrar solo cada 4 horas para evitar saturación
-                            return index % 4 === 0 ? this.getLabelForValue(value) : '';
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            color: '#b3b3b3'
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
                         }
                     },
-                    grid: {
-                        color: 'rgba(255, 255, 255, 0.1)'
+                    x: {
+                        ticks: {
+                            color: '#b3b3b3',
+                            callback: function(value, index) {
+                                // Mostrar solo cada 4 horas para evitar saturación
+                                return index % 4 === 0 ? this.getLabelForValue(value) : '';
+                            }
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
                     }
                 }
             }
-        }
-    });
+        });
+        console.log('Daily pattern chart created successfully');
+    } catch (error) {
+        console.error('Error creating daily pattern chart:', error);
+    }
 }
 
 function createPopularityChart() {
     const ctx = document.getElementById('popularityChart');
-    if (!ctx) return;
+    if (!ctx) {
+        console.error('Canvas popularityChart not found');
+        return;
+    }
     
     const popData = insightsData.popularityDistribution;
     
-    popularityChart = new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: ['Emergentes', 'En Crecimiento', 'Establecidos'],
-            datasets: [{
-                data: [
-                    popData.emergent ? popData.emergent.percentage : 0,
-                    popData.growing ? popData.growing.percentage : 0,
-                    popData.established ? popData.established.percentage : 0
-                ],
-                backgroundColor: [
-                    'rgba(255, 107, 107, 0.8)',  // Rojo para emergentes
-                    'rgba(255, 193, 7, 0.8)',    // Amarillo para en crecimiento
-                    'rgba(29, 185, 84, 0.8)'     // Verde para establecidos
-                ],
-                borderColor: [
-                    'rgba(255, 107, 107, 1)',
-                    'rgba(255, 193, 7, 1)',
-                    'rgba(29, 185, 84, 1)'
-                ],
-                borderWidth: 2
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: {
-                        color: '#ffffff',
-                        padding: 15,
-                        usePointStyle: true
-                    }
-                },
-                tooltip: {
-                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                    titleColor: '#1DB954',
-                    bodyColor: '#ffffff',
-                    borderColor: '#1DB954',
-                    borderWidth: 1,
-                    callbacks: {
-                        label: function(context) {
-                            return context.label + ': ' + context.parsed + '%';
+    try {
+        popularityChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Emergentes', 'En Crecimiento', 'Establecidos'],
+                datasets: [{
+                    data: [
+                        popData.emergent ? popData.emergent.percentage : 0,
+                        popData.growing ? popData.growing.percentage : 0,
+                        popData.established ? popData.established.percentage : 0
+                    ],
+                    backgroundColor: [
+                        'rgba(255, 107, 107, 0.8)',  // Rojo para emergentes
+                        'rgba(255, 193, 7, 0.8)',    // Amarillo para en crecimiento
+                        'rgba(29, 185, 84, 0.8)'     // Verde para establecidos
+                    ],
+                    borderColor: [
+                        'rgba(255, 107, 107, 1)',
+                        'rgba(255, 193, 7, 1)',
+                        'rgba(29, 185, 84, 1)'
+                    ],
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            color: '#ffffff',
+                            padding: 15,
+                            usePointStyle: true
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: '#1DB954',
+                        bodyColor: '#ffffff',
+                        borderColor: '#1DB954',
+                        borderWidth: 1,
+                        callbacks: {
+                            label: function(context) {
+                                return context.label + ': ' + context.parsed + '%';
+                            }
                         }
                     }
                 }
             }
-        }
-    });
+        });
+        console.log('Popularity chart created successfully');
+    } catch (error) {
+        console.error('Error creating popularity chart:', error);
+    }
 }
 
 function setupSidebarNavigation() {
