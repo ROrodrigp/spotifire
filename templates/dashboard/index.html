@@ -71,12 +71,6 @@
     height: 250px;
 }
 
-.chart-loading {
-    color: #b3b3b3;
-    text-align: center;
-    font-style: italic;
-}
-
 .metric-summary {
     display: flex;
     justify-content: space-around;
@@ -184,17 +178,7 @@
     font-style: italic;
 }
 
-/* Debug styles */
-.debug-info {
-    background: rgba(255, 255, 0, 0.1);
-    border: 1px solid #ffff00;
-    padding: 10px;
-    margin: 10px 0;
-    border-radius: 4px;
-    font-family: monospace;
-    font-size: 12px;
-    color: #ffff00;
-}
+
 
 /* Responsive design */
 @media (max-width: 768px) {
@@ -290,14 +274,6 @@
 
         {% if insights_available %}
         
-        <!-- Debug Info -->
-        <div class="debug-info">
-            <strong>Debug Info:</strong><br>
-            Chart.js loaded: <span id="chart-debug">checking...</span><br>
-            Canvas elements: <span id="canvas-debug">checking...</span><br>
-            Data available: {{ advanced_insights|length if advanced_insights else 0 }} insights
-        </div>
-        
         <!-- Insights Principales -->
         <div class="row">
             <!-- Artistas Más Escuchados -->
@@ -313,7 +289,6 @@
                         {% if advanced_insights.top_artists %}
                             <div class="chart-container medium">
                                 <canvas id="topArtistsChart"></canvas>
-                                <div class="chart-loading" id="chart-loading-1">Cargando gráfico...</div>
                             </div>
                             
                             <div class="metric-summary">
@@ -360,7 +335,6 @@
                         {% if advanced_insights.daily_pattern %}
                             <div class="chart-container medium">
                                 <canvas id="dailyPatternChart"></canvas>
-                                <div class="chart-loading" id="chart-loading-2">Cargando gráfico...</div>
                             </div>
                             
                             {% set peak_hour = advanced_insights.daily_pattern | max(attribute='play_count') %}
@@ -485,7 +459,6 @@
                         {% if advanced_insights.popularity_distribution %}
                             <div class="chart-container small">
                                 <canvas id="popularityChart"></canvas>
-                                <div class="chart-loading" id="chart-loading-3">Cargando gráfico...</div>
                             </div>
                             
                             {% set pop_data = advanced_insights.popularity_distribution %}
@@ -630,35 +603,12 @@ const insightsData = {
     popularityDistribution: {{ advanced_insights.popularity_distribution | tojson if advanced_insights.popularity_distribution else '{}' }}
 };
 
-// Debug function
-function updateDebugInfo() {
-    const chartDebug = document.getElementById('chart-debug');
-    const canvasDebug = document.getElementById('canvas-debug');
-    
-    // Check Chart.js
-    if (typeof Chart !== 'undefined') {
-        chartDebug.textContent = 'YES ✓';
-        chartDebug.style.color = '#1DB954';
-    } else {
-        chartDebug.textContent = 'NO ✗';
-        chartDebug.style.color = '#ff6b6b';
-    }
-    
-    // Check canvas elements
-    const canvases = ['topArtistsChart', 'dailyPatternChart', 'popularityChart'];
-    const foundCanvases = canvases.filter(id => document.getElementById(id) !== null);
-    canvasDebug.textContent = `${foundCanvases.length}/${canvases.length} found`;
-    canvasDebug.style.color = foundCanvases.length === canvases.length ? '#1DB954' : '#ff6b6b';
-}
-
 // Inicializar gráficos cuando el DOM esté listo
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM Content Loaded');
-    updateDebugInfo();
     
     // Wait a bit for Chart.js to fully load
     setTimeout(() => {
-        updateDebugInfo();
         if (typeof Chart !== 'undefined') {
             initializeCharts();
         } else {
@@ -669,13 +619,6 @@ document.addEventListener('DOMContentLoaded', function() {
     setupSidebarNavigation();
 });
 
-function hideChartLoading(chartNumber) {
-    const loadingElement = document.getElementById(`chart-loading-${chartNumber}`);
-    if (loadingElement) {
-        loadingElement.style.display = 'none';
-    }
-}
-
 function initializeCharts() {
     console.log('Initializing charts...');
     console.log('Insights data:', insightsData);
@@ -684,7 +627,6 @@ function initializeCharts() {
     if (insightsData.topArtists && insightsData.topArtists.length > 0) {
         console.log('Creating top artists chart');
         createTopArtistsChart();
-        hideChartLoading(1);
     } else {
         console.log('No top artists data available');
     }
@@ -693,7 +635,6 @@ function initializeCharts() {
     if (insightsData.dailyPattern && insightsData.dailyPattern.length > 0) {
         console.log('Creating daily pattern chart');
         createDailyPatternChart();
-        hideChartLoading(2);
     } else {
         console.log('No daily pattern data available');
     }
@@ -702,7 +643,6 @@ function initializeCharts() {
     if (Object.keys(insightsData.popularityDistribution).length > 0) {
         console.log('Creating popularity chart');
         createPopularityChart();
-        hideChartLoading(3);
     } else {
         console.log('No popularity distribution data available');
     }
