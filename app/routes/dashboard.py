@@ -303,8 +303,8 @@ def get_user_summary():
             'top_artist': top_artists[0]['artist_name'] if top_artists else 'No disponible',
             'total_top_plays': sum([artist['play_count'] for artist in top_artists]),
             'listening_preference': 'fin de semana' if weekly_pattern.get('weekend', {}).get('percentage', 0) > 60 else 'días laborales',
-            'music_taste_profile': self._determine_taste_profile(popularity_dist),
-            'activity_level': self._determine_activity_level(weekly_pattern),
+            'music_taste_profile': _determine_taste_profile(popularity_dist),
+            'activity_level': _determine_activity_level(weekly_pattern),
             'generated_at': datetime.now().isoformat()
         }
         

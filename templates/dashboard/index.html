@@ -1,22 +1,223 @@
 {% extends "base.html" %}
 
-{% block title %}Spotifire - Dashboard{% endblock %}
+{% block title %}Spotifire - Tu Perfil Musical{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.min.css">
+<style>
+/* Estilos específicos para los nuevos insights */
+.insight-card {
+    background: linear-gradient(145deg, #282828, #1a1a1a);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 15px rgba(29, 185, 84, 0.1);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.insight-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(29, 185, 84, 0.15);
+}
+
+.insight-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #1DB954;
+}
+
+.insight-icon {
+    font-size: 24px;
+    color: #1DB954;
+    margin-right: 12px;
+    width: 30px;
+    text-align: center;
+}
+
+.insight-title {
+    font-size: 18px;
+    font-weight: bold;
+    color: #ffffff;
+    margin: 0;
+    flex-grow: 1;
+}
+
+.insight-period {
+    font-size: 12px;
+    color: #b3b3b3;
+    background: rgba(29, 185, 84, 0.1);
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+.chart-container {
+    position: relative;
+    height: 300px;
+    margin: 15px 0;
+}
+
+.chart-container.small {
+    height: 200px;
+}
+
+.chart-container.medium {
+    height: 250px;
+}
+
+.metric-summary {
+    display: flex;
+    justify-content: space-around;
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid #333;
+}
+
+.metric-item {
+    text-align: center;
+    flex: 1;
+}
+
+.metric-value {
+    font-size: 24px;
+    font-weight: bold;
+    color: #1DB954;
+    display: block;
+}
+
+.metric-label {
+    font-size: 12px;
+    color: #b3b3b3;
+    margin-top: 4px;
+}
+
+.loading-placeholder {
+    text-align: center;
+    padding: 40px 20px;
+    color: #b3b3b3;
+}
+
+.loading-spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid #333;
+    border-radius: 50%;
+    border-top-color: #1DB954;
+    animation: spin 1s ease-in-out infinite;
+    margin-right: 10px;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.error-state {
+    text-align: center;
+    padding: 20px;
+    color: #ff6b6b;
+    background: rgba(255, 107, 107, 0.1);
+    border-radius: 8px;
+    margin: 10px 0;
+}
+
+.profile-badge {
+    display: inline-block;
+    background: linear-gradient(45deg, #1DB954, #1ed760);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: bold;
+    margin-top: 10px;
+}
+
+.comparison-bars {
+    display: flex;
+    align-items: center;
+    margin: 10px 0;
+}
+
+.bar-container {
+    flex: 1;
+    margin: 0 10px;
+}
+
+.bar-label {
+    font-size: 14px;
+    color: #ffffff;
+    margin-bottom: 5px;
+    text-align: center;
+}
+
+.progress-bar {
+    height: 8px;
+    background: #333;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #1DB954, #1ed760);
+    border-radius: 4px;
+    transition: width 1s ease-out;
+}
+
+.insight-description {
+    font-size: 14px;
+    color: #b3b3b3;
+    line-height: 1.4;
+    margin-top: 10px;
+    font-style: italic;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .insight-card {
+        padding: 15px;
+        margin-bottom: 15px;
+    }
+    
+    .chart-container {
+        height: 250px;
+    }
+    
+    .metric-summary {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .comparison-bars {
+        flex-direction: column;
+        gap: 15px;
+    }
+}
+</style>
 {% endblock %}
 
 {% block navigation %}
 <nav class="navbar navbar-expand-lg navbar-dark">
     <div class="container-fluid">
-        <a class="navbar-brand" href="#">Spotifire</a>
+        <a class="navbar-brand" href="#">
+            <i class="bi bi-music-note-beamed"></i> Spotifire
+        </a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
             <span class="navbar-toggler-icon"></span>
         </button>
         <div class="collapse navbar-collapse justify-content-end" id="navbarNav">
             <ul class="navbar-nav">
                 <li class="nav-item">
-                    <a class="nav-link" href="/logout">Cerrar sesión</a>
+                    <span class="navbar-text me-3">
+                        <i class="bi bi-person-circle"></i> {{ user_name }}
+                    </span>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/logout">
+                        <i class="bi bi-box-arrow-right"></i> Cerrar sesión
+                    </a>
                 </li>
             </ul>
         </div>
@@ -33,17 +234,20 @@
         <a href="#" class="sidebar-item active">
             <i class="bi bi-house-door sidebar-icon"></i> Inicio
         </a>
-        <a href="#" class="sidebar-item">
-            <i class="bi bi-music-note-list sidebar-icon"></i> Canciones recientes
+        <a href="#top-artists-section" class="sidebar-item">
+            <i class="bi bi-person-badge sidebar-icon"></i> Artistas Favoritos
         </a>
-        <a href="#" class="sidebar-item">
-            <i class="bi bi-person-badge sidebar-icon"></i> Artistas favoritos
+        <a href="#daily-pattern-section" class="sidebar-item">
+            <i class="bi bi-clock sidebar-icon"></i> Ritmo Diario
         </a>
-        <a href="#" class="sidebar-item">
-            <i class="bi bi-graph-up sidebar-icon"></i> Estadísticas
+        <a href="#weekly-pattern-section" class="sidebar-item">
+            <i class="bi bi-calendar-week sidebar-icon"></i> Patrones Semanales
         </a>
-        <a href="#" class="sidebar-item">
-            <i class="bi bi-gear sidebar-icon"></i> Configuración
+        <a href="#popularity-section" class="sidebar-item">
+            <i class="bi bi-graph-up sidebar-icon"></i> Perfil Musical
+        </a>
+        <a href="#recent-tracks-section" class="sidebar-item">
+            <i class="bi bi-music-note-list sidebar-icon"></i> Actividad Reciente
         </a>
     </div>
     
@@ -51,16 +255,277 @@
     <div class="col-lg-10 content-area">
         <!-- Welcome Banner -->
         <div class="welcome-banner">
-            <h3 class="welcome-message">¡Bienvenido, {{ user_name }}!</h3>
-            <button class="btn btn-dark">Actualizar datos</button>
+            <div>
+                <h3 class="welcome-message">¡Hola, {{ user_name }}!</h3>
+                <p class="mb-0" style="color: rgba(255,255,255,0.8);">
+                    Descubre los patrones ocultos en tu música
+                </p>
+            </div>
+            <button class="btn btn-dark" onclick="refreshAllInsights()">
+                <i class="bi bi-arrow-clockwise"></i> Actualizar datos
+            </button>
+        </div>
+
+        {% if insights_available %}
+        
+        <!-- Insights Principales -->
+        <div class="row">
+            <!-- Artistas Más Escuchados -->
+            <div class="col-xl-6 col-lg-12" id="top-artists-section">
+                <div class="insight-card">
+                    <div class="insight-header">
+                        <i class="bi bi-star-fill insight-icon"></i>
+                        <h4 class="insight-title">Tus Artistas Favoritos</h4>
+                        <span class="insight-period">últimos 90 días</span>
+                    </div>
+                    
+                    <div id="top-artists-content">
+                        {% if advanced_insights.top_artists %}
+                            <div class="chart-container medium">
+                                <canvas id="topArtistsChart"></canvas>
+                            </div>
+                            
+                            <div class="metric-summary">
+                                <div class="metric-item">
+                                    <span class="metric-value">{{ advanced_insights.top_artists|length }}</span>
+                                    <div class="metric-label">Artistas Top</div>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-value">{{ advanced_insights.top_artists[0].play_count if advanced_insights.top_artists else 0 }}</span>
+                                    <div class="metric-label">Más Escuchado</div>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-value">{{ (advanced_insights.top_artists | sum(attribute='play_count')) if advanced_insights.top_artists else 0 }}</span>
+                                    <div class="metric-label">Total Reproducciones</div>
+                                </div>
+                            </div>
+                            
+                            {% if advanced_insights.top_artists %}
+                            <div class="insight-description">
+                                Tu artista más escuchado es <strong>{{ advanced_insights.top_artists[0].artist_name }}</strong> 
+                                con {{ advanced_insights.top_artists[0].play_count }} reproducciones.
+                            </div>
+                            {% endif %}
+                        {% else %}
+                            <div class="loading-placeholder">
+                                <div class="loading-spinner"></div>
+                                Cargando tus artistas favoritos...
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Ritmo Musical Diario -->
+            <div class="col-xl-6 col-lg-12" id="daily-pattern-section">
+                <div class="insight-card">
+                    <div class="insight-header">
+                        <i class="bi bi-clock insight-icon"></i>
+                        <h4 class="insight-title">Tu Ritmo Musical</h4>
+                        <span class="insight-period">patrón por hora</span>
+                    </div>
+                    
+                    <div id="daily-pattern-content">
+                        {% if advanced_insights.daily_pattern %}
+                            <div class="chart-container medium">
+                                <canvas id="dailyPatternChart"></canvas>
+                            </div>
+                            
+                            {% set peak_hour = advanced_insights.daily_pattern | max(attribute='play_count') %}
+                            {% set total_plays = advanced_insights.daily_pattern | sum(attribute='play_count') %}
+                            
+                            <div class="metric-summary">
+                                <div class="metric-item">
+                                    <span class="metric-value">{{ peak_hour.hour_label if peak_hour else "--" }}</span>
+                                    <div class="metric-label">Hora Pico</div>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-value">{{ peak_hour.play_count if peak_hour else 0 }}</span>
+                                    <div class="metric-label">Max Reproducciones</div>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-value">{{ "%.1f"|format(total_plays/24) if total_plays > 0 else "0.0" }}</span>
+                                    <div class="metric-label">Promedio/Hora</div>
+                                </div>
+                            </div>
+                            
+                            <div class="insight-description">
+                                Tu momento más musical del día es a las <strong>{{ peak_hour.hour_label if peak_hour else "no disponible" }}</strong>.
+                            </div>
+                        {% else %}
+                            <div class="loading-placeholder">
+                                <div class="loading-spinner"></div>
+                                Analizando tu ritmo diario...
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
         </div>
         
         <div class="row">
-            <!-- Recent Tracks -->
+            <!-- Patrones de Semana vs Fin de Semana -->
+            <div class="col-xl-6 col-lg-12" id="weekly-pattern-section">
+                <div class="insight-card">
+                    <div class="insight-header">
+                        <i class="bi bi-calendar-week insight-icon"></i>
+                        <h4 class="insight-title">Semana vs Fin de Semana</h4>
+                        <span class="insight-period">últimos 90 días</span>
+                    </div>
+                    
+                    <div id="weekly-pattern-content">
+                        {% if advanced_insights.weekly_pattern %}
+                            {% set weekday_data = advanced_insights.weekly_pattern.weekday %}
+                            {% set weekend_data = advanced_insights.weekly_pattern.weekend %}
+                            
+                            <div class="comparison-bars">
+                                <div class="bar-container">
+                                    <div class="bar-label">Días Laborales</div>
+                                    <div class="progress-bar">
+                                        <div class="progress-fill" style="width: {{ weekday_data.percentage if weekday_data else 0 }}%"></div>
+                                    </div>
+                                    <div style="text-align: center; margin-top: 5px; color: #1DB954; font-weight: bold;">
+                                        {{ weekday_data.percentage if weekday_data else 0 }}%
+                                    </div>
+                                </div>
+                                
+                                <div class="bar-container">
+                                    <div class="bar-label">Fin de Semana</div>
+                                    <div class="progress-bar">
+                                        <div class="progress-fill" style="width: {{ weekend_data.percentage if weekend_data else 0 }}%"></div>
+                                    </div>
+                                    <div style="text-align: center; margin-top: 5px; color: #1DB954; font-weight: bold;">
+                                        {{ weekend_data.percentage if weekend_data else 0 }}%
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="metric-summary">
+                                <div class="metric-item">
+                                    <span class="metric-value">{{ weekday_data.play_count if weekday_data else 0 }}</span>
+                                    <div class="metric-label">Reproducciones L-V</div>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-value">{{ weekend_data.play_count if weekend_data else 0 }}</span>
+                                    <div class="metric-label">Reproducciones S-D</div>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-value">
+                                        {% if weekday_data and weekend_data %}
+                                            {{ "%.1f"|format((weekday_data.avg_popularity + weekend_data.avg_popularity) / 2) }}
+                                        {% else %}
+                                            --
+                                        {% endif %}
+                                    </span>
+                                    <div class="metric-label">Popularidad Promedio</div>
+                                </div>
+                            </div>
+                            
+                            <div class="insight-description">
+                                {% if weekday_data and weekend_data %}
+                                    {% if weekday_data.percentage > weekend_data.percentage %}
+                                        Escuchas más música durante la <strong>semana laboral</strong> ({{ weekday_data.percentage }}%).
+                                    {% else %}
+                                        Prefieres disfrutar tu música en el <strong>fin de semana</strong> ({{ weekend_data.percentage }}%).
+                                    {% endif %}
+                                {% endif %}
+                            </div>
+                        {% else %}
+                            <div class="loading-placeholder">
+                                <div class="loading-spinner"></div>
+                                Comparando patrones semanales...
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Artistas Emergentes vs Establecidos -->
+            <div class="col-xl-6 col-lg-12" id="popularity-section">
+                <div class="insight-card">
+                    <div class="insight-header">
+                        <i class="bi bi-graph-up insight-icon"></i>
+                        <h4 class="insight-title">Tu Perfil Musical</h4>
+                        <span class="insight-period">emergentes vs establecidos</span>
+                    </div>
+                    
+                    <div id="popularity-content">
+                        {% if advanced_insights.popularity_distribution %}
+                            <div class="chart-container small">
+                                <canvas id="popularityChart"></canvas>
+                            </div>
+                            
+                            {% set pop_data = advanced_insights.popularity_distribution %}
+                            
+                            <div class="metric-summary">
+                                <div class="metric-item">
+                                    <span class="metric-value">{{ pop_data.emergent.percentage if pop_data.emergent else 0 }}%</span>
+                                    <div class="metric-label">Emergentes</div>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-value">{{ pop_data.growing.percentage if pop_data.growing else 0 }}%</span>
+                                    <div class="metric-label">En Crecimiento</div>
+                                </div>
+                                <div class="metric-item">
+                                    <span class="metric-value">{{ pop_data.established.percentage if pop_data.established else 0 }}%</span>
+                                    <div class="metric-label">Establecidos</div>
+                                </div>
+                            </div>
+                            
+                            {% if pop_data.summary %}
+                                {% set dominant_tier = pop_data.summary.dominant_tier %}
+                                {% if dominant_tier == 'emergent' %}
+                                    <div class="profile-badge">🔍 Descubridor Underground</div>
+                                    <div class="insight-description">
+                                        Eres un <strong>explorador musical</strong>. Te gusta descubrir artistas antes de que se vuelvan populares.
+                                    </div>
+                                {% elif dominant_tier == 'growing' %}
+                                    <div class="profile-badge">⚖️ Explorador Equilibrado</div>
+                                    <div class="insight-description">
+                                        Tienes un <strong>gusto musical equilibrado</strong>, mezclando artistas emergentes con establecidos.
+                                    </div>
+                                {% else %}
+                                    <div class="profile-badge">⭐ Amante del Mainstream</div>
+                                    <div class="insight-description">
+                                        Disfrutas de la <strong>música popular</strong> y los éxitos que conectan con las masas.
+                                    </div>
+                                {% endif %}
+                            {% endif %}
+                        {% else %}
+                            <div class="loading-placeholder">
+                                <div class="loading-spinner"></div>
+                                Analizando tu perfil musical...
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        {% else %}
+        
+        <!-- Fallback: Mostrar mensaje de insights no disponibles -->
+        <div class="row">
+            <div class="col-12">
+                <div class="insight-card">
+                    <div class="error-state">
+                        <i class="bi bi-info-circle" style="font-size: 24px; margin-bottom: 10px;"></i>
+                        <h5>Insights Avanzados No Disponibles</h5>
+                        <p>Los insights avanzados estarán disponibles una vez que hayamos procesado suficientes datos de tu historial musical.</p>
+                        <p><small>Esto puede tomar unas horas después de conectar tu cuenta por primera vez.</small></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        {% endif %}
+        
+        <!-- Sección de Actividad Reciente (datos en tiempo real) -->
+        <div class="row" id="recent-tracks-section">
             <div class="col-md-6">
                 <div class="card">
                     <div class="card-header">
-                        <i class="bi bi-music-note-list me-2"></i> Canciones reproducidas recientemente
+                        <i class="bi bi-music-note-list me-2"></i> Actividad Musical Reciente
                     </div>
                     <div class="card-body">
                         {% if recent_tracks %}
@@ -84,11 +549,10 @@
                 </div>
             </div>
             
-            <!-- Top Artists -->
             <div class="col-md-6">
                 <div class="card">
                     <div class="card-header">
-                        <i class="bi bi-person-badge me-2"></i> Tus artistas top
+                        <i class="bi bi-person-badge me-2"></i> Artistas del Momento
                     </div>
                     <div class="card-body">
                         {% if top_artists %}
@@ -103,7 +567,6 @@
                                                 Sin géneros definidos
                                             {% endif %}
                                         </div>
-                                        <!-- Usar una clase predefinida en lugar de estilo inline -->
                                         <div class="popularity-bar popularity-{{ (artist.popularity//10)*10 if artist.popularity is defined else 50 }}"></div>
                                     </div>
                                 </div>
@@ -120,5 +583,277 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.min.js"></script>
+<script>
+// Variables globales para los gráficos
+let topArtistsChart = null;
+let dailyPatternChart = null;
+let popularityChart = null;
+
+// Datos del template para JavaScript
+const insightsData = {
+    topArtists: {{ advanced_insights.top_artists | tojson if advanced_insights.top_artists else '[]' }},
+    dailyPattern: {{ advanced_insights.daily_pattern | tojson if advanced_insights.daily_pattern else '[]' }},
+    popularityDistribution: {{ advanced_insights.popularity_distribution | tojson if advanced_insights.popularity_distribution else '{}' }}
+};
+
+// Inicializar gráficos cuando el DOM esté listo
+document.addEventListener('DOMContentLoaded', function() {
+    initializeCharts();
+    setupSidebarNavigation();
+});
+
+function initializeCharts() {
+    // Gráfico de Artistas Top
+    if (insightsData.topArtists && insightsData.topArtists.length > 0) {
+        createTopArtistsChart();
+    }
+    
+    // Gráfico de Patrón Diario
+    if (insightsData.dailyPattern && insightsData.dailyPattern.length > 0) {
+        createDailyPatternChart();
+    }
+    
+    // Gráfico de Distribución de Popularidad
+    if (Object.keys(insightsData.popularityDistribution).length > 0) {
+        createPopularityChart();
+    }
+}
+
+function createTopArtistsChart() {
+    const ctx = document.getElementById('topArtistsChart');
+    if (!ctx) return;
+    
+    const artists = insightsData.topArtists.slice(0, 8); // Top 8 para mejor visualización
+    
+    topArtistsChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: artists.map(artist => artist.artist_name.length > 15 ? 
+                artist.artist_name.substring(0, 15) + '...' : artist.artist_name),
+            datasets: [{
+                label: 'Reproducciones',
+                data: artists.map(artist => artist.play_count),
+                backgroundColor: 'rgba(29, 185, 84, 0.8)',
+                borderColor: 'rgba(29, 185, 84, 1)',
+                borderWidth: 1,
+                borderRadius: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    titleColor: '#1DB954',
+                    bodyColor: '#ffffff',
+                    borderColor: '#1DB954',
+                    borderWidth: 1
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        color: '#b3b3b3'
+                    },
+                    grid: {
+                        color: 'rgba(255, 255, 255, 0.1)'
+                    }
+                },
+                x: {
+                    ticks: {
+                        color: '#b3b3b3',
+                        maxRotation: 45
+                    },
+                    grid: {
+                        display: false
+                    }
+                }
+            }
+        }
+    });
+}
+
+function createDailyPatternChart() {
+    const ctx = document.getElementById('dailyPatternChart');
+    if (!ctx) return;
+    
+    const hourlyData = insightsData.dailyPattern;
+    
+    dailyPatternChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: hourlyData.map(item => item.hour_label),
+            datasets: [{
+                label: 'Reproducciones por Hora',
+                data: hourlyData.map(item => item.play_count),
+                borderColor: '#1DB954',
+                backgroundColor: 'rgba(29, 185, 84, 0.1)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.4,
+                pointBackgroundColor: '#1DB954',
+                pointBorderColor: '#ffffff',
+                pointBorderWidth: 2,
+                pointRadius: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    titleColor: '#1DB954',
+                    bodyColor: '#ffffff',
+                    borderColor: '#1DB954',
+                    borderWidth: 1
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        color: '#b3b3b3'
+                    },
+                    grid: {
+                        color: 'rgba(255, 255, 255, 0.1)'
+                    }
+                },
+                x: {
+                    ticks: {
+                        color: '#b3b3b3',
+                        callback: function(value, index) {
+                            // Mostrar solo cada 4 horas para evitar saturación
+                            return index % 4 === 0 ? this.getLabelForValue(value) : '';
+                        }
+                    },
+                    grid: {
+                        color: 'rgba(255, 255, 255, 0.1)'
+                    }
+                }
+            }
+        }
+    });
+}
+
+function createPopularityChart() {
+    const ctx = document.getElementById('popularityChart');
+    if (!ctx) return;
+    
+    const popData = insightsData.popularityDistribution;
+    
+    popularityChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Emergentes', 'En Crecimiento', 'Establecidos'],
+            datasets: [{
+                data: [
+                    popData.emergent ? popData.emergent.percentage : 0,
+                    popData.growing ? popData.growing.percentage : 0,
+                    popData.established ? popData.established.percentage : 0
+                ],
+                backgroundColor: [
+                    'rgba(255, 107, 107, 0.8)',  // Rojo para emergentes
+                    'rgba(255, 193, 7, 0.8)',    // Amarillo para en crecimiento
+                    'rgba(29, 185, 84, 0.8)'     // Verde para establecidos
+                ],
+                borderColor: [
+                    'rgba(255, 107, 107, 1)',
+                    'rgba(255, 193, 7, 1)',
+                    'rgba(29, 185, 84, 1)'
+                ],
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        color: '#ffffff',
+                        padding: 15,
+                        usePointStyle: true
+                    }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    titleColor: '#1DB954',
+                    bodyColor: '#ffffff',
+                    borderColor: '#1DB954',
+                    borderWidth: 1,
+                    callbacks: {
+                        label: function(context) {
+                            return context.label + ': ' + context.parsed + '%';
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function setupSidebarNavigation() {
+    // Navegación suave para enlaces del sidebar
+    const sidebarItems = document.querySelectorAll('.sidebar-item[href^="#"]');
+    sidebarItems.forEach(item => {
+        item.addEventListener('click', function(e) {
+            e.preventDefault();
+            const targetId = this.getAttribute('href');
+            const targetElement = document.querySelector(targetId);
+            
+            if (targetElement) {
+                targetElement.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+                
+                // Actualizar estado activo
+                sidebarItems.forEach(i => i.classList.remove('active'));
+                this.classList.add('active');
+            }
+        });
+    });
+}
+
+function refreshAllInsights() {
+    const btn = document.querySelector('.welcome-banner button');
+    const originalText = btn.innerHTML;
+    
+    // Mostrar estado de carga
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Actualizando...';
+    btn.disabled = true;
+    
+    // Llamar a la API para refrescar insights
+    fetch('/api/insights/refresh')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Recargar la página para mostrar datos actualizados
+                window.location.reload();
+            } else {
+                throw new Error(data.error || 'Error desconocido');
+            }
+        })
+        .catch(error => {
+            console.error('Error refrescando insights:', error);
+            alert('Error al actualizar los datos. Por favor, inténtalo de nuevo.');
+        })
+        .finally(() => {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        });
+}
+</script>
 <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 {% endblock %}
