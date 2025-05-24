@@ -21,7 +21,7 @@ class MusicDimensionsAnalyzer:
     Mucho más limpio que mantener archivos de tracking.
     """
     
-    def __init__(self, region_name='us-east-1', database_name='spotify_analytics', aws_profile=None):
+    def __init__(self, region_name='us-east-1', database_name='spotify_analytics', aws_profile=None, model_id=None):
         """Inicializa el analizador simple."""
         try:
             # Crear sesión de boto3 con perfil específico si se proporciona
@@ -40,6 +40,9 @@ class MusicDimensionsAnalyzer:
             self.aws_profile = aws_profile
             self.s3_output_location = 's3://itam-analytics-ragp/athena-results/'
             
+            # Model ID con fallback a inference profile
+            self.model_id = model_id or "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+            
             # Configuración
             self.batch_size = 10
             self.max_retries = 3
@@ -47,6 +50,7 @@ class MusicDimensionsAnalyzer:
             
             profile_info = f" (perfil: {aws_profile})" if aws_profile else " (perfil: default)"
             logger.info(f"Analizador simple inicializado para DB: {database_name}{profile_info}")
+            logger.info(f"Usando modelo: {self.model_id}")
             
         except Exception as e:
             logger.error(f"Error inicializando analizador: {str(e)}")
@@ -313,7 +317,7 @@ Responde ÚNICAMENTE con el JSON válido, sin texto adicional.
             }
             
             response = self.bedrock_runtime.invoke_model(
-                modelId="anthropic.claude-3-5-sonnet-20241022-v2:0",
+                modelId=self.model_id,
                 body=json.dumps(body),
                 contentType="application/json",
                 accept="application/json"
@@ -437,7 +441,8 @@ Responde ÚNICAMENTE con el JSON válido, sin texto adicional.
                 'songs_processed': len(all_analyses),
                 'approach': 'LEFT_JOIN_incremental',
                 'database': self.database_name,
-                'aws_profile': self.aws_profile or 'default'
+                'aws_profile': self.aws_profile or 'default',
+                'model_id': self.model_id
             },
             'analyses': all_analyses
         }
@@ -500,6 +505,11 @@ def main():
         dest='aws_profile',
         help='Alias para --aws-profile'
     )
+    parser.add_argument(
+        '--model-id',
+        default="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+        help='Model ID o Inference Profile ID a usar (default: us.anthropic.claude-3-5-sonnet-20241022-v2:0)'
+    )
     
     args = parser.parse_args()
     
@@ -512,11 +522,14 @@ def main():
         else:
             print(f"🔧 Usando perfil AWS por defecto")
         
+        print(f"🤖 Usando modelo: {args.model_id}")
+        
         # Inicializar analizador
         analyzer = MusicDimensionsAnalyzer(
             region_name=args.region,
             database_name=args.database_name,
-            aws_profile=args.aws_profile
+            aws_profile=args.aws_profile,
+            model_id=args.model_id
         )
         
         if args.show_stats:
@@ -533,8 +546,9 @@ def main():
                 
                 if stats['tracks_pending'] > 0:
                     profile_arg = f" --aws-profile {args.aws_profile}" if args.aws_profile else ""
+                    model_arg = f" --model-id {args.model_id}" if args.model_id != "us.anthropic.claude-3-5-sonnet-20241022-v2:0" else ""
                     print(f"\n🚀 Para continuar:")
-                    print(f"python3 {__file__}{profile_arg} --max-songs {min(stats['tracks_pending'], 100)}")
+                    print(f"python3 {__file__}{profile_arg}{model_arg} --max-songs {min(stats['tracks_pending'], 100)}")
                 else:
                     print(f"\n🎉 ¡Análisis completo!")
             return
@@ -554,8 +568,9 @@ def main():
             final_stats = result.get('final_stats', {})
             if final_stats.get('tracks_pending', 0) > 0:
                 profile_arg = f" --aws-profile {args.aws_profile}" if args.aws_profile else ""
+                model_arg = f" --model-id {args.model_id}" if args.model_id != "us.anthropic.claude-3-5-sonnet-20241022-v2:0" else ""
                 print(f"\n🔄 Para continuar:")
-                print(f"python3 {__file__}{profile_arg} --max-songs 50")
+                print(f"python3 {__file__}{profile_arg}{model_arg} --max-songs 50")
             else:
                 print(f"\n🎉 ¡Todas las canciones han sido analizadas!")
         else:
@@ -569,6 +584,15 @@ def main():
         if args.aws_profile:
             print(f"💡 Verifica que el perfil '{args.aws_profile}' existe en ~/.aws/credentials")
             print(f"💡 O usa: aws configure --profile {args.aws_profile}")
+        
+        # Sugerencias específicas para errores de Bedrock
+        error_msg = str(e)
+        if "ValidationException" in error_msg and "inference profile" in error_msg:
+            print(f"\n🔧 Error de modelo Bedrock detectado. Prueba con:")
+            print(f"   • --model-id anthropic.claude-3-sonnet-20240229-v1:0")
+            print(f"   • --model-id us.anthropic.claude-3-5-sonnet-20241022-v2:0")
+            print(f"   • Verificar modelos disponibles en AWS Bedrock Console")
+        
         return 1
     
     return 0
