@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Analizador Musical Incremental SIMPLE - Usando LEFT JOIN
-Enfoque elegante: Si está en user_tracks pero NO en tracks_psychological_analysis, procesarla.
+Analizador de dimensiones musicales usando AWS Bedrock.
+Enfoque incremental inteligente: Usa LEFT JOIN para procesar solo canciones nuevas.
 """
 
 import boto3
@@ -13,22 +13,31 @@ from datetime import datetime
 from typing import Dict, List, Optional
 import argparse
 
-logger = logging.getLogger('simple_incremental_analyzer')
+logger = logging.getLogger('bedrock_music_analyzer')
 
-class SimpleMusicAnalyzer:
+class MusicDimensionsAnalyzer:
     """
     Analizador simple que usa LEFT JOIN para evitar duplicados.
     Mucho más limpio que mantener archivos de tracking.
     """
     
-    def __init__(self, region_name='us-east-1', database_name='spotify_analytics'):
+    def __init__(self, region_name='us-east-1', database_name='spotify_analytics', aws_profile=None):
         """Inicializa el analizador simple."""
         try:
-            self.bedrock_runtime = boto3.client('bedrock-runtime', region_name=region_name)
-            self.athena_client = boto3.client('athena', region_name=region_name)
+            # Crear sesión de boto3 con perfil específico si se proporciona
+            if aws_profile:
+                logger.info(f"Usando perfil AWS: {aws_profile}")
+                session = boto3.Session(profile_name=aws_profile)
+                self.bedrock_runtime = session.client('bedrock-runtime', region_name=region_name)
+                self.athena_client = session.client('athena', region_name=region_name)
+            else:
+                logger.info("Usando perfil AWS por defecto")
+                self.bedrock_runtime = boto3.client('bedrock-runtime', region_name=region_name)
+                self.athena_client = boto3.client('athena', region_name=region_name)
             
             self.region_name = region_name
             self.database_name = database_name
+            self.aws_profile = aws_profile
             self.s3_output_location = 's3://itam-analytics-ragp/athena-results/'
             
             # Configuración
@@ -36,10 +45,13 @@ class SimpleMusicAnalyzer:
             self.max_retries = 3
             self.delay_between_requests = 2
             
-            logger.info(f"Analizador simple inicializado para DB: {database_name}")
+            profile_info = f" (perfil: {aws_profile})" if aws_profile else " (perfil: default)"
+            logger.info(f"Analizador simple inicializado para DB: {database_name}{profile_info}")
             
         except Exception as e:
             logger.error(f"Error inicializando analizador: {str(e)}")
+            if aws_profile:
+                logger.error(f"Verifica que el perfil '{aws_profile}' existe en ~/.aws/credentials")
             raise
     
     def get_unprocessed_songs_smart(self, limit: int = 50) -> pd.DataFrame:
@@ -424,7 +436,8 @@ Responde ÚNICAMENTE con el JSON válido, sin texto adicional.
                 'duration_seconds': duration,
                 'songs_processed': len(all_analyses),
                 'approach': 'LEFT_JOIN_incremental',
-                'database': self.database_name
+                'database': self.database_name,
+                'aws_profile': self.aws_profile or 'default'
             },
             'analyses': all_analyses
         }
@@ -455,7 +468,7 @@ Responde ÚNICAMENTE con el JSON válido, sin texto adicional.
 def main():
     """Función principal con enfoque simple."""
     parser = argparse.ArgumentParser(
-        description='Analizador Simple - usa LEFT JOIN para evitar duplicados'
+        description='Analiza canciones usando AWS Bedrock para generar dimensiones musicales avanzadas'
     )
     parser.add_argument(
         '--max-songs',
@@ -478,16 +491,32 @@ def main():
         default='us-east-1',
         help='Región AWS (default: us-east-1)'
     )
+    parser.add_argument(
+        '--aws-profile',
+        help='Perfil AWS a usar (si no se especifica, usa el perfil por defecto)'
+    )
+    parser.add_argument(
+        '--profile',
+        dest='aws_profile',
+        help='Alias para --aws-profile'
+    )
     
     args = parser.parse_args()
     
     logging.basicConfig(level=logging.INFO)
     
     try:
-        # Inicializar analizador simple
-        analyzer = SimpleMusicAnalyzer(
+        # Mostrar información del perfil si se especifica
+        if args.aws_profile:
+            print(f"🔧 Usando perfil AWS: {args.aws_profile}")
+        else:
+            print(f"🔧 Usando perfil AWS por defecto")
+        
+        # Inicializar analizador
+        analyzer = MusicDimensionsAnalyzer(
             region_name=args.region,
-            database_name=args.database_name
+            database_name=args.database_name,
+            aws_profile=args.aws_profile
         )
         
         if args.show_stats:
@@ -503,8 +532,9 @@ def main():
                 print(f"Progreso: {stats['completion_percentage']:.1f}%")
                 
                 if stats['tracks_pending'] > 0:
+                    profile_arg = f" --aws-profile {args.aws_profile}" if args.aws_profile else ""
                     print(f"\n🚀 Para continuar:")
-                    print(f"python3 {__file__} --max-songs {min(stats['tracks_pending'], 100)}")
+                    print(f"python3 {__file__}{profile_arg} --max-songs {min(stats['tracks_pending'], 100)}")
                 else:
                     print(f"\n🎉 ¡Análisis completo!")
             return
@@ -523,8 +553,9 @@ def main():
             
             final_stats = result.get('final_stats', {})
             if final_stats.get('tracks_pending', 0) > 0:
+                profile_arg = f" --aws-profile {args.aws_profile}" if args.aws_profile else ""
                 print(f"\n🔄 Para continuar:")
-                print(f"python3 {__file__} --max-songs 50")
+                print(f"python3 {__file__}{profile_arg} --max-songs 50")
             else:
                 print(f"\n🎉 ¡Todas las canciones han sido analizadas!")
         else:
@@ -535,6 +566,9 @@ def main():
         return 1
     except Exception as e:
         print(f"\n❌ Error: {str(e)}")
+        if args.aws_profile:
+            print(f"💡 Verifica que el perfil '{args.aws_profile}' existe en ~/.aws/credentials")
+            print(f"💡 O usa: aws configure --profile {args.aws_profile}")
         return 1
     
     return 0
