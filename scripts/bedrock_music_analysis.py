@@ -21,19 +21,31 @@ class MusicDimensionsAnalyzer:
     Mucho más limpio que mantener archivos de tracking.
     """
     
-    def __init__(self, region_name='us-east-1', database_name='spotify_analytics', aws_profile=None, model_id=None):
+    def __init__(self, region_name='us-east-1', database_name='spotify_analytics', aws_profile=None, model_id=None, batch_size=5):
         """Inicializa el analizador simple."""
         try:
+            # Configuración de timeouts para Bedrock
+            bedrock_config = boto3.session.Config(
+                read_timeout=300,  # 5 minutos
+                connect_timeout=60,  # 1 minuto para conectar
+                retries={'max_attempts': 3}
+            )
+            
+            athena_config = boto3.session.Config(
+                read_timeout=120,  # 2 minutos para Athena
+                connect_timeout=30
+            )
+            
             # Crear sesión de boto3 con perfil específico si se proporciona
             if aws_profile:
                 logger.info(f"Usando perfil AWS: {aws_profile}")
                 session = boto3.Session(profile_name=aws_profile)
-                self.bedrock_runtime = session.client('bedrock-runtime', region_name=region_name)
-                self.athena_client = session.client('athena', region_name=region_name)
+                self.bedrock_runtime = session.client('bedrock-runtime', region_name=region_name, config=bedrock_config)
+                self.athena_client = session.client('athena', region_name=region_name, config=athena_config)
             else:
                 logger.info("Usando perfil AWS por defecto")
-                self.bedrock_runtime = boto3.client('bedrock-runtime', region_name=region_name)
-                self.athena_client = boto3.client('athena', region_name=region_name)
+                self.bedrock_runtime = boto3.client('bedrock-runtime', region_name=region_name, config=bedrock_config)
+                self.athena_client = boto3.client('athena', region_name=region_name, config=athena_config)
             
             self.region_name = region_name
             self.database_name = database_name
@@ -43,14 +55,16 @@ class MusicDimensionsAnalyzer:
             # Model ID con fallback a inference profile
             self.model_id = model_id or "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
             
-            # Configuración
-            self.batch_size = 10
+            # Configuración optimizada para timeouts
+            self.batch_size = batch_size  # Ahora configurable
             self.max_retries = 3
-            self.delay_between_requests = 2
+            self.delay_between_requests = 3  # Aumentado de 2 a 3 segundos
+            self.request_timeout = 300  # 5 minutos para requests largos
             
             profile_info = f" (perfil: {aws_profile})" if aws_profile else " (perfil: default)"
             logger.info(f"Analizador simple inicializado para DB: {database_name}{profile_info}")
             logger.info(f"Usando modelo: {self.model_id}")
+            logger.info(f"Tamaño de lote: {self.batch_size} canciones")
             
         except Exception as e:
             logger.error(f"Error inicializando analizador: {str(e)}")
@@ -316,6 +330,9 @@ Responde ÚNICAMENTE con el JSON válido, sin texto adicional.
                 ]
             }
             
+            logger.debug(f"Enviando request a {self.model_id}...")
+            logger.debug(f"Tamaño del prompt: ~{len(prompt)} caracteres")
+            
             response = self.bedrock_runtime.invoke_model(
                 modelId=self.model_id,
                 body=json.dumps(body),
@@ -324,10 +341,19 @@ Responde ÚNICAMENTE con el JSON válido, sin texto adicional.
             )
             
             response_body = json.loads(response['body'].read().decode('utf-8'))
+            logger.debug("Respuesta recibida exitosamente")
             return response_body['content'][0]['text']
             
         except Exception as e:
-            logger.error(f"Error llamando a Bedrock: {str(e)}")
+            error_msg = str(e)
+            if "timeout" in error_msg.lower():
+                logger.error(f"Timeout al llamar a Bedrock (modelo puede estar sobrecargado): {error_msg}")
+                logger.info("💡 Sugerencia: Prueba con un modelo más rápido como claude-3-5-haiku")
+            elif "throttling" in error_msg.lower():
+                logger.error(f"Rate limiting en Bedrock: {error_msg}")
+                logger.info("💡 Sugerencia: Espera un momento antes de reintentar")
+            else:
+                logger.error(f"Error al llamar a Bedrock: {error_msg}")
             raise
     
     def parse_llm_response(self, response_text: str) -> List[Dict]:
@@ -367,11 +393,32 @@ Responde ÚNICAMENTE con el JSON válido, sin texto adicional.
                 return analyses
                 
             except Exception as e:
-                logger.warning(f"Intento {attempt + 1} falló: {str(e)}")
+                error_msg = str(e)
+                
+                if "timeout" in error_msg.lower():
+                    wait_time = self.delay_between_requests * (attempt + 2)  # Delay progresivo para timeouts
+                    logger.warning(f"⏰ Timeout en intento {attempt + 1}/{self.max_retries}")
+                    logger.info(f"🔄 Reintentando en {wait_time} segundos...")
+                elif "throttling" in error_msg.lower():
+                    wait_time = self.delay_between_requests * (attempt + 3)  # Delay mayor para throttling
+                    logger.warning(f"🚦 Rate limiting en intento {attempt + 1}/{self.max_retries}")
+                    logger.info(f"🔄 Reintentando en {wait_time} segundos...")
+                else:
+                    wait_time = self.delay_between_requests * (attempt + 1)
+                    logger.warning(f"❌ Intento {attempt + 1}/{self.max_retries} falló: {str(e)}")
+                
                 if attempt < self.max_retries - 1:
-                    time.sleep(self.delay_between_requests * (attempt + 1))
+                    time.sleep(wait_time)
                 else:
                     logger.error(f"❌ Análisis falló después de {self.max_retries} intentos")
+                    
+                    # Sugerencias específicas según el tipo de error
+                    if "timeout" in error_msg.lower():
+                        logger.error("💡 Soluciones sugeridas:")
+                        logger.error("   • Usar --model-id us.anthropic.claude-3-5-haiku-20241022-v1:0 (más rápido)")
+                        logger.error("   • Reducir --max-songs a 5 o menos")
+                        logger.error("   • Esperar unos minutos y reintentar")
+                    
                     raise
     
     def process_unprocessed_songs(self, max_songs: int = 50) -> Dict:
@@ -510,6 +557,12 @@ def main():
         default="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
         help='Model ID o Inference Profile ID a usar (default: us.anthropic.claude-3-5-sonnet-20241022-v2:0)'
     )
+    parser.add_argument(
+        '--batch-size',
+        type=int,
+        default=5,
+        help='Número de canciones por lote (default: 5, reduce si hay timeouts)'
+    )
     
     args = parser.parse_args()
     
@@ -523,13 +576,15 @@ def main():
             print(f"🔧 Usando perfil AWS por defecto")
         
         print(f"🤖 Usando modelo: {args.model_id}")
+        print(f"📦 Tamaño de lote: {args.batch_size} canciones")
         
         # Inicializar analizador
         analyzer = MusicDimensionsAnalyzer(
             region_name=args.region,
             database_name=args.database_name,
             aws_profile=args.aws_profile,
-            model_id=args.model_id
+            model_id=args.model_id,
+            batch_size=args.batch_size
         )
         
         if args.show_stats:
@@ -592,6 +647,12 @@ def main():
             print(f"   • --model-id anthropic.claude-3-sonnet-20240229-v1:0")
             print(f"   • --model-id us.anthropic.claude-3-5-sonnet-20241022-v2:0")
             print(f"   • Verificar modelos disponibles en AWS Bedrock Console")
+        elif "timeout" in error_msg.lower():
+            print(f"\n⏰ Error de timeout detectado. Prueba con:")
+            print(f"   • --model-id us.anthropic.claude-3-5-haiku-20241022-v1:0 (más rápido)")
+            print(f"   • --batch-size 3 (lotes más pequeños)")
+            print(f"   • --max-songs 5 (menos canciones por ejecución)")
+            print(f"   • Esperar unos minutos y reintentar")
         
         return 1
     
