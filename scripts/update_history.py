@@ -351,6 +351,9 @@ class SpotifyUserCollector:
             likes_result = self.save_to_json(data_likes, "likes")
             followed_result = self.save_to_json(data_followed, "followed")
             top_tracks_result = self.save_to_json(data_top_tracks, "top_tracks")
+            self.save_to_csv(data_l,"likes")
+            self.save_to_csv(data_f,"followed")
+            self.save_to_csv(data_t,"top_tracks")
 
             success_count = sum(1 for result in [likes_result, followed_result, top_tracks_result] if result is not None)
             
