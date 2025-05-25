@@ -271,17 +271,70 @@ class SpotifyUserCollector:
             logger.error(f"Error al obtener canciones likeadas para {self.user_id}: {e}")
             return []
 
+    def get_top_tracks(self, period):
+        """Obtiene las canciones principales de un usuario específico"""
+        try:
+            # Configurar timeout en el objeto de sesión subyacente
+            # Este enfoque es más compatible con diferentes versiones de Spotipy
+            try:
+                if hasattr(self.sp, '_session'):
+                    self.sp._session.timeout = 20
+                    logger.info(f"Timeout configurado a 20 segundos para {self.user_id} usando _session")
+                elif hasattr(self.sp, '_auth'):
+                    # Algunas versiones utilizan una estructura más anidada
+                    if hasattr(self.sp._auth, 'session'):
+                        self.sp._auth.session.timeout = 20
+                        logger.info(f"Timeout configurado a 20 segundos para {self.user_id} usando _auth.session")
+                else:
+                    logger.warning(f"No se pudo configurar el timeout para {self.user_id}: estructura no reconocida")
+            except Exception as e:
+                logger.warning(f"Error al configurar timeout para {self.user_id}: {e}")
+            
+            # Implementar reintentos simples
+            max_retries = 3
+            retry_delay = 5  # segundos
+            
+            for attempt in range(max_retries):
+                try:
+                    results = self.sp.current_user_top_tracks(limit=50,time_range=period)
+                    top_tracks = results['items']
+                    while results['next']:
+                        results = self.sp.next(results)
+                        top_tracks.extend(results['items'])
+
+                    logger.info(f"Obtenidas {len(top_tracks)} canciones para {self.user_id}")
+                    return top_tracks
+                except Exception as e:
+                    if "timeout" in str(e).lower() and attempt < max_retries - 1:
+                        logger.warning(f"Timeout al obtener canciones para {self.user_id}, reintento {attempt+1}/{max_retries} en {retry_delay} segundos")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2  # Backoff exponencial
+                    elif "rate limiting" in str(e).lower() and attempt < max_retries - 1:
+                        # Agregar manejo específico para rate limiting
+                        logger.warning(f"Rate limiting para {self.user_id}, reintento {attempt+1}/{max_retries} en {retry_delay} segundos")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2
+                    elif attempt < max_retries - 1:
+                        # Para cualquier otro error, intentar de nuevo pero con menos reintento
+                        logger.warning(f"Error ({str(e)}) para {self.user_id}, reintento {attempt+1}/{max_retries} en {retry_delay} segundos")
+                        time.sleep(retry_delay)
+                    else:
+                        # Si es el último intento, propagar el error
+                        raise
+                        
+        except Exception as e:
+            logger.error(f"Error al obtener top tracks para {self.user_id}: {e}")
+            return []
+
     def save_to_json(self, data, type):
-        """Guarda los datos en un archivo JSON con timestamp"""
+        """Guarda los datos en un archivo JSON"""
         if not data:
             logger.warning(f"No hay datos para guardar para {self.user_id}")
             return
         
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = os.path.join(self.user_dir, f"likes_list_{timestamp}.json")
-        
         try:
             if type=="likes":
+                filename = os.path.join(self.user_dir, f"likes_list.json")
                 list_jsons = [
                     {
                         'track_id': item['track']['id'],
@@ -295,7 +348,22 @@ class SpotifyUserCollector:
                     for item in data
                 ]
             elif type=="followed":
+                filename = os.path.join(self.user_dir, f"followed_artists.json")
                 list_jsons = {'artists_ids': [item['id'] for item in data]}
+            elif type=="top_tracks":
+                filename = os.path.join(self.user_dir, f"top_tracks.json")
+                list_jsons = [
+                    {
+                        'track_id': item['id'],
+                        'album_id': item['album']['id'],
+                        'artists_id': [artist['id'] for artist in item['artists']],
+                        'explicit': item['explicit'],
+                        'duration': item['duration_ms'],
+                        'track_name': item['name'],
+                        'track_popularity': item['popularity']
+                    }
+                    for item in data
+                ]
 
             with open(filename, 'w', encoding='utf-8') as jsonfile:
                 json.dump(list_jsons, jsonfile, ensure_ascii=False, indent=4)            
@@ -311,9 +379,11 @@ class SpotifyUserCollector:
         try:
             data_l = self.get_likes_playlist()
             data_f = self.get_followed_artists()
+            data_t = self.get_top_tracks("long_term")
 
             self.save_to_csv(data_l,"likes")
             self.save_to_csv(data_f,"followed")
+            self.save_to_csv(data_f,"top_tracks")
 
             return "Actualizado "
         
