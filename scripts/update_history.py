@@ -392,7 +392,7 @@ class SpotifyUserCollector:
 
             self.save_to_csv(data_l,"likes")
             self.save_to_csv(data_f,"followed")
-            self.save_to_csv(data_f,"top_tracks")
+            self.save_to_csv(data_t,"top_tracks")
 
             return "Actualizado "
         

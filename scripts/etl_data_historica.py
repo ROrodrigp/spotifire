@@ -31,7 +31,7 @@ USER_ID = args['USER_ID']  # Specific user ID or 'ALL'
 
 # S3 paths
 RAW_BASE_PATH = f"s3://{INPUT_BUCKET}/spotifire/raw/"
-PROCESSED_BASE_PATH = f"s3://{OUTPUT_BUCKET}/spotifire/processed/individual/history/"
+PROCESSED_BASE_PATH = f"s3://{OUTPUT_BUCKET}/spotifire/processed/history/"
 
 def get_user_directories():
     """Get list of user directories in the raw data path"""
@@ -58,7 +58,7 @@ def get_user_directories():
     return user_dirs
 
 def check_user_has_json_files(user_id):
-    """Check if user directory contains CSV files"""
+    """Check if user directory contains JSON files"""
     s3_client = boto3.client('s3')
     
     response = s3_client.list_objects_v2(
@@ -82,7 +82,7 @@ def define_schema_likes():
         StructField("explicit", BooleanType(), True),
         StructField("duration", IntegerType(), True),
         StructField("track_name", StringType(), True),
-        StructField("track_popularity", StringType(), True),
+        StructField("track_popularity", IntegerType(), True),
         StructField("added_at", StringType(), True)
     ])
 
@@ -102,7 +102,7 @@ def define_schema_top_tracks():
         StructField("explicit", BooleanType(), True),
         StructField("duration", IntegerType(), True),
         StructField("track_name", StringType(), True),
-        StructField("track_popularity", StringType(), True)
+        StructField("track_popularity", IntegerType(), True)
     ])
 
 
@@ -117,7 +117,7 @@ def creates_likes_data(user_id):
     
     # Output path for this user's parquet files
     input_path = f"{RAW_BASE_PATH}{user_id}/"
-    output_path = f"{PROCESSED_BASE_PATH}user_{user_id}_likes.parquet"
+    output_path = f"{PROCESSED_BASE_PATH}likes/user_{user_id}_likes.parquet"
     
     try:    
         schema_l = define_schema_likes()
@@ -156,8 +156,8 @@ def creates_likes_data(user_id):
         
         # Reorder columns for better organization
         final_columns = [
-            "user_id", "added_at_utc", "addeed_at_mexico", "track_id", "track_name", 
-            "artist_id", "album_id",  "track_popularity", "explicit", "duration",
+            "user_id", "added_at_utc", "added_at_mexico", "track_id", "track_name", 
+            "artists_id", "album_id",  "track_popularity", "explicit", "duration",
             "processed_at"
         ]
         
@@ -204,7 +204,7 @@ def creates_followed_data(user_id):
     
     # Output path for this user's parquet files
     input_path = f"{RAW_BASE_PATH}{user_id}/"
-    output_path = f"{PROCESSED_BASE_PATH}user_{user_id}_followed.parquet"
+    output_path = f"{PROCESSED_BASE_PATH}followed/user_{user_id}_followed.parquet"
     
     try:    
         schema_f = define_schema_followed()
@@ -262,7 +262,7 @@ def creates_top_tracks_data(user_id):
     
     # Output path for this user's parquet files
     input_path = f"{RAW_BASE_PATH}{user_id}/"
-    output_path = f"{PROCESSED_BASE_PATH}user_{user_id}_top_tracks.parquet"
+    output_path = f"{PROCESSED_BASE_PATH}top_tracks/user_{user_id}_top_tracks.parquet"
     
     try:    
         schema_t = define_schema_top_tracks()
@@ -294,14 +294,14 @@ def creates_top_tracks_data(user_id):
         # Reorder columns for better organization
         final_columns = [
             "user_id", "ith_preference", "track_id", "track_name", 
-            "artist_id", "album_id",  "track_popularity", "explicit", "duration",
+            "artists_id", "album_id",  "track_popularity", "explicit", "duration",
             "processed_at"
         ]
         
         df_final = df_cleaned.select(*final_columns)
         
         # Order by played_at_utc for better compression and queries
-        df_final = df_final.orderBy("i")
+        df_final = df_final.orderBy("ith_preference")
         
         print(f"Clean records for user {user_id}: {df_final.count()}")
         
