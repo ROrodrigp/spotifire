@@ -14,7 +14,7 @@ def get_spotify_oauth(client_id, client_secret, state=None):
         client_id=client_id,
         client_secret=client_secret,
         redirect_uri=Config.REDIRECT_URI,
-        scope="user-read-recently-played user-top-read",
+        scope="user-library-read user-read-recently-played user-top-read playlist-read-private playlist-read-collaborative user-follow-read",
         state=state,
         cache_path=f".spotify_cache_{client_id}"  # Caché único por client_id
     )
