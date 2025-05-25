@@ -104,7 +104,7 @@ class GlueCatalogManager:
             logger.error(f"Unexpected error creating database: {str(e)}")
             return False
     
-    def get_table_schema(self):
+    def get_table_schema(self, table_type):
         """
         Define the schema for the Spotify analytics table.
         
@@ -115,7 +115,9 @@ class GlueCatalogManager:
         Returns:
             list: List of column definitions for the table
         """
-        return [
+
+        if (table_type=="user_tracks"):
+            return [
             {
                 'Name': 'user_id', 
                 'Type': 'string', 
@@ -212,6 +214,134 @@ class GlueCatalogManager:
                 'Comment': 'When this record was processed by the ETL pipeline'
             }
         ]
+        elif (table_type=="top_tracks"):
+            return [
+            {
+                'Name': 'user_id', 
+                'Type': 'string', 
+                'Comment': 'Unique identifier for the Spotify user'
+            },
+            {
+                'Name': 'ith_preference', 
+                'Type': 'int', 
+                'Comment': 'Order of track in preferences'
+            },
+            {
+                'Name': 'track_id', 
+                'Type': 'string', 
+                'Comment': 'Unique identifier for the Spotify track'
+            },
+            {
+                'Name': 'track_name', 
+                'Type': 'string', 
+                'Comment': 'Name of the Spotify track'
+            },
+            {
+                'Name': 'artists_id', 
+                'Type': 'array', 
+                'Comment': 'Uniques identifiers for the Spotify artists'
+            },
+            {
+                'Name': 'album_id', 
+                'Type': 'string', 
+                'Comment': 'Unique identifier for the Spotify album'
+            },
+            {
+                'Name': 'track_popularity', 
+                'Type': 'int', 
+                'Comment': 'Track`s percentage popularity'
+            },
+            {
+                'Name': 'explicit', 
+                'Type': 'boolean', 
+                'Comment': 'Flag to indicate explicity'
+            },
+            {
+                'Name': 'duration', 
+                'Type': 'int', 
+                'Comment': 'Track`s duration (milliseconds)'
+            },
+            {
+                'Name': 'processed_at', 
+                'Type': 'timestamp', 
+                'Comment': 'Timestamp of processing'
+            }]
+
+        elif (table_type=="likes"):
+            return [
+            {
+                'Name': 'user_id', 
+                'Type': 'string', 
+                'Comment': 'Unique identifier for the Spotify user'
+            },
+            {
+                'Name': 'added_at_utc', 
+                'Type': 'timestamp', 
+                'Comment': 'UTC timestamp of adding'
+            },
+            {
+                'Name': 'added_at_mexico', 
+                'Type': 'timestamp', 
+                'Comment': 'UTC-6 timestamp of adding'
+            },
+            {
+                'Name': 'track_id', 
+                'Type': 'string', 
+                'Comment': 'Uniques identifiers for the Spotify track'
+            },
+            {
+                'Name': 'track_name', 
+                'Type': 'string', 
+                'Comment': 'Name of the Spotify track'
+            },
+            {
+                'Name': 'artists_id', 
+                'Type': 'array', 
+                'Comment': 'Uniques identifiers for the Spotify artists'
+            },
+            {
+                'Name': 'album_id', 
+                'Type': 'string', 
+                'Comment': 'Unique identifier for the Spotify album'
+            },
+            {
+                'Name': 'track_popularity', 
+                'Type': 'int', 
+                'Comment': 'Track`s percentage popularity'
+            },
+            {
+                'Name': 'explicit', 
+                'Type': 'boolean', 
+                'Comment': 'Flag to indicate explicity'
+            },
+            {
+                'Name': 'duration', 
+                'Type': 'int', 
+                'Comment': 'Track`s duration (milliseconds)'
+            },
+            {
+                'Name': 'processed_at', 
+                'Type': 'timestamp', 
+                'Comment': 'Timestamp of processing'
+            }]
+        elif (table_type=="followed_artists"):
+            return [
+            {
+                'Name': 'user_id', 
+                'Type': 'string', 
+                'Comment': 'Unique identifier for the Spotify user'
+            },
+            {
+                'Name': 'artist_id', 
+                'Type': 'string', 
+                'Comment': 'Uniques identifiers for the Spotify artist'
+            },
+            {
+                'Name': 'processed_at', 
+                'Type': 'timestamp', 
+                'Comment': 'Timestamp of processing'
+            }]
+        
     
     def create_table(self, database_name, table_name, s3_location):
         """
@@ -223,7 +353,7 @@ class GlueCatalogManager:
         
         Args:
             database_name (str): Name of the database to contain the table
-            table_name (str): Name of the table to create
+            table_name (str): Name of the table to create. One of: ['user_tracks', 'top_tracks', 'likes', 'followed_artists']
             s3_location (str): S3 path where Parquet files are stored
             
         Returns:
@@ -233,7 +363,14 @@ class GlueCatalogManager:
         logger.info(f"S3 location: {s3_location}")
         
         # Get the schema definition
-        table_schema = self.get_table_schema()
+
+        table_schema = self.get_table_schema(table_name)
+        table_descr = {
+            "user_tracks":'Unified table containing Spotify listening data for all users',
+            "top_tracks": 'Unified table containing Spotify top tracks data for all users',
+            "likes": 'Unified table containing Spotify tracks liked data for all users',
+            "followed_artists": 'Unified table containing Spotify followed artist data for all users'
+        }
         
         try:
             # Create the table with full configuration for Parquet files
@@ -241,7 +378,7 @@ class GlueCatalogManager:
                 DatabaseName=database_name,
                 TableInput={
                     'Name': table_name,
-                    'Description': 'Unified table containing Spotify listening data for all users',
+                    'Description': table_descr[table_name],
                     'TableType': 'EXTERNAL_TABLE',
                     'Parameters': {
                         'EXTERNAL': 'TRUE',
