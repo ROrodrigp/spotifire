@@ -341,6 +341,7 @@ class SpotifyUserCollector:
                         'album_id': item['track']['album']['id'],
                         'artists_id': [artist['id'] for artist in item['track']['artists']],
                         'explicit': item['track']['explicit'],
+                        'duration_ms': item['track']['duration_ms'],
                         'track_name': item['track']['name'],
                         'track_popularity': item['track']['popularity'],
                         'added_at': item['added_at']
@@ -354,6 +355,7 @@ class SpotifyUserCollector:
                 filename = os.path.join(self.user_dir, f"top_tracks.json")
                 list_jsons = [
                     {
+                        'ith_preference': i + 1,
                         'track_id': item['id'],
                         'album_id': item['album']['id'],
                         'artists_id': [artist['id'] for artist in item['artists']],
@@ -362,7 +364,7 @@ class SpotifyUserCollector:
                         'track_name': item['name'],
                         'track_popularity': item['popularity']
                     }
-                    for item in data
+                    for i, item in enumerate(data)
                 ]
 
             with open(filename, 'w', encoding='utf-8') as jsonfile:
