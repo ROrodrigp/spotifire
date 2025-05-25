@@ -80,6 +80,7 @@ def define_schema_likes():
         StructField("album_id", StringType(), True),
         StructField("artists_id", ArrayType(), True),
         StructField("explicit", BooleanType(), True),
+        StructField("duration", IntegerType(), True),
         StructField("track_name", StringType(), True),
         StructField("track_popularity", StringType(), True),
         StructField("added_at", StringType(), True)
@@ -91,7 +92,21 @@ def define_schema_followed():
         StructField("artists_id", StringType(), True)
     ])
 
-def creates_likes_data (user_id):
+def define_schema_top_tracks():
+    """Define the schema for the JSON files 'top_tracks' """
+    return StructType([
+        StructField("ith_preference", IntegerType(), True),
+        StructField("track_id", StringType(), True),
+        StructField("album_id", StringType(), True),
+        StructField("artists_id", ArrayType(), True),
+        StructField("explicit", BooleanType(), True),
+        StructField("duration", IntegerType(), True),
+        StructField("track_name", StringType(), True),
+        StructField("track_popularity", StringType(), True)
+    ])
+
+
+def creates_likes_data(user_id):
     """Creates all JSON files for a specific user"""
     print(f"Processing user: {user_id}")
 
@@ -100,9 +115,9 @@ def creates_likes_data (user_id):
         print(f"No JSON files found for user {user_id}, skipping...")
         return
     
-    # Output path for this user's JSON files
+    # Output path for this user's parquet files
     input_path = f"{RAW_BASE_PATH}{user_id}/"
-    output_path = f"{PROCESSED_BASE_PATH}user_{user_id}_likes.json"
+    output_path = f"{PROCESSED_BASE_PATH}user_{user_id}_likes.parquet"
     
     try:    
         schema_l = define_schema_likes()
@@ -134,14 +149,16 @@ def creates_likes_data (user_id):
                 "artists_id": ["-1"], 
                 "album_id": "-1",
                 "track_popularity": 0,
-                "explicit": False
+                "explicit": False,
+                "duration":0
             }) \
             .withColumn("processed_at", current_timestamp())
         
         # Reorder columns for better organization
         final_columns = [
             "user_id", "added_at_utc", "addeed_at_mexico", "track_id", "track_name", 
-            "artist_id", "album_id",  "track_popularity", "explicit", "processed_at"
+            "artist_id", "album_id",  "track_popularity", "explicit", "duration",
+            "processed_at"
         ]
         
         df_final = df_cleaned.select(*final_columns)
@@ -176,7 +193,7 @@ def creates_likes_data (user_id):
         print(f"Error processing user {user_id}: {str(e)}")
         raise
 
-def creates_followed_data (user_id):
+def creates_followed_data(user_id):
     """Creates all JSON files for a specific user"""
     print(f"Processing user: {user_id}")
 
@@ -185,9 +202,9 @@ def creates_followed_data (user_id):
         print(f"No JSON files found for user {user_id}, skipping...")
         return
     
-    # Output path for this user's JSON files
+    # Output path for this user's parquet files
     input_path = f"{RAW_BASE_PATH}{user_id}/"
-    output_path = f"{PROCESSED_BASE_PATH}user_{user_id}_followed.json"
+    output_path = f"{PROCESSED_BASE_PATH}user_{user_id}_followed.parquet"
     
     try:    
         schema_f = define_schema_followed()
@@ -226,6 +243,79 @@ def creates_followed_data (user_id):
         
         # Log data quality metrics
         total_records = df_final.count()
+        
+        print(f"Data Quality Report for {user_id}:")
+        print(f"  - Total clean records: {total_records}")
+        
+    except Exception as e:
+        print(f"Error processing user {user_id}: {str(e)}")
+        raise
+
+def creates_top_tracks_data(user_id):
+    """Creates all parquet files for a specific user"""
+    print(f"Processing user: {user_id}")
+
+    # Check if user has JSON files
+    if not check_user_has_json_files(user_id):
+        print(f"No JSON files found for user {user_id}, skipping...")
+        return
+    
+    # Output path for this user's parquet files
+    input_path = f"{RAW_BASE_PATH}{user_id}/"
+    output_path = f"{PROCESSED_BASE_PATH}user_{user_id}_top_tracks.parquet"
+    
+    try:    
+        schema_t = define_schema_top_tracks()
+        df = spark.read \
+            .schema(schema_t) \
+            .json(f"{input_path}top_*.json")
+        
+        if df.count() == 0:
+            print(f"No data found for user {user_id}")
+            return
+            
+        print(f"Raw records for user {user_id}: {df.count()}")
+        
+        
+        # Handle null values and clean text fields
+        df_cleaned = df \
+            .withColumn("user_id", lit(user_id)) \
+            .withColumn("track_name", trim(col("track_name"))) \
+            .fillna({
+                "track_name": "Unknown Track",
+                "artists_id": ["-1"], 
+                "album_id": "-1",
+                "track_popularity": 0,
+                "explicit": False,
+                "duration":0
+            }) \
+            .withColumn("processed_at", current_timestamp())
+        
+        # Reorder columns for better organization
+        final_columns = [
+            "user_id", "ith_preference", "track_id", "track_name", 
+            "artist_id", "album_id",  "track_popularity", "explicit", "duration",
+            "processed_at"
+        ]
+        
+        df_final = df_cleaned.select(*final_columns)
+        
+        # Order by played_at_utc for better compression and queries
+        df_final = df_final.orderBy("i")
+        
+        print(f"Clean records for user {user_id}: {df_final.count()}")
+        
+        # Write to Parquet with compression
+        df_final.coalesce(1) \
+            .write \
+            .mode("overwrite") \
+            .option("compression", "snappy") \
+            .parquet(output_path)
+        
+        print(f"Successfully processed user {user_id} -> {output_path}")
+        
+        # Log data quality metrics
+        total_records = df_final.count()
         duplicate_records = df_cleaned.count() - total_records
         null_tracks = df.filter(col("track_id").isNull()).count()
         
@@ -233,8 +323,6 @@ def creates_followed_data (user_id):
         print(f"  - Total clean records: {total_records}")
         print(f"  - Duplicates removed: {duplicate_records}")
         print(f"  - Null track_ids found: {null_tracks}")
-        print(f"  - Date range (UTC): {df_final.agg(min('added_at_utc'), max('added_at_utc')).collect()[0]}")
-        print(f"  - Date range (Mexico): {df_final.agg(min('added_at_mexico'), max('added_at_mexico')).collect()[0]}")
         
     except Exception as e:
         print(f"Error processing user {user_id}: {str(e)}")
@@ -260,6 +348,7 @@ def main():
         try:
             creates_likes_data(user_id)
             creates_followed_data(user_id)
+            creates_top_tracks_data(user_id)
             processed_users += 1
         except Exception as e:
             print(f"Failed to process user {user_id}: {str(e)}")
