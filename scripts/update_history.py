@@ -111,21 +111,13 @@ class SpotifyUserCollector:
     def _setup_spotify_client(self):
         """Configura y devuelve un cliente autenticado de Spotify"""
         # Scope para acceder al historial de reproducción
-        scope = (
-        "user-library-read "
-        "user-read-recently-played "
-        "user-top-read "
-        "playlist-read-private "
-        "playlist-read-collaborative "
-        "user-follow-read"
-    )
         
         # Configurar OAuth con token existente
         auth_manager = SpotifyOAuth(
             client_id=self.client_id,
             client_secret=self.client_secret,
             redirect_uri=self.redirect_uri,
-            scope=scope,
+            scope="user-library-read user-read-recently-played user-top-read playlist-read-private playlist-read-collaborative user-follow-read",
             open_browser=False,
             cache_path=f".spotify_cache_{os.path.basename(self.credentials_file)}"
         )
@@ -136,7 +128,7 @@ class SpotifyUserCollector:
                 "access_token": self.credentials.get("access_token", ""),
                 "refresh_token": self.credentials.get("refresh_token"),
                 "expires_at": self.credentials.get("expires_at", 0),
-                "scope": self.credentials.get("scope", scope),
+                "scope": self.credentials.get("scope", "user-library-read user-read-recently-played user-top-read playlist-read-private playlist-read-collaborative user-follow-read"),
                 "token_type": self.credentials.get("token_type", "Bearer")
             }
             
