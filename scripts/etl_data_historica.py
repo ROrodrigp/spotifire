@@ -156,8 +156,8 @@ def creates_likes_data(user_id):
         
         # Reorder columns for better organization
         final_columns = [
-            "user_id", "added_at_utc", "addeed_at_mexico", "track_id", "track_name", 
-            "artist_id", "album_id",  "track_popularity", "explicit", "duration",
+            "user_id", "added_at_utc", "added_at_mexico", "track_id", "track_name", 
+            "artists_id", "album_id",  "track_popularity", "explicit", "duration",
             "processed_at"
         ]
         
@@ -294,7 +294,7 @@ def creates_top_tracks_data(user_id):
         # Reorder columns for better organization
         final_columns = [
             "user_id", "ith_preference", "track_id", "track_name", 
-            "artist_id", "album_id",  "track_popularity", "explicit", "duration",
+            "artists_id", "album_id",  "track_popularity", "explicit", "duration",
             "processed_at"
         ]
         
