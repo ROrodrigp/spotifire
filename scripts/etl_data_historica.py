@@ -31,7 +31,13 @@ USER_ID = args['USER_ID']  # Specific user ID or 'ALL'
 
 # S3 paths
 RAW_BASE_PATH = f"s3://{INPUT_BUCKET}/spotifire/raw/"
-PROCESSED_BASE_PATH = f"s3://{OUTPUT_BUCKET}/spotifire/processed/history/"
+
+# Updated S3 output paths to match table configurations
+OUTPUT_PATHS = {
+    'likes': f"s3://{OUTPUT_BUCKET}/spotifire/processed/likes/",
+    'followed_artists': f"s3://{OUTPUT_BUCKET}/spotifire/processed/followed_artists/",
+    'top_tracks': f"s3://{OUTPUT_BUCKET}/spotifire/processed/top_tracks/"
+}
 
 def get_user_directories():
     """Get list of user directories in the raw data path"""
@@ -78,7 +84,7 @@ def define_schema_likes():
     return StructType([
         StructField("track_id", StringType(), True),
         StructField("album_id", StringType(), True),
-        StructField("artists_id", ArrayType(), True),
+        StructField("artists_id", ArrayType(StringType()), True),
         StructField("explicit", BooleanType(), True),
         StructField("duration", IntegerType(), True),
         StructField("track_name", StringType(), True),
@@ -98,7 +104,7 @@ def define_schema_top_tracks():
         StructField("ith_preference", IntegerType(), True),
         StructField("track_id", StringType(), True),
         StructField("album_id", StringType(), True),
-        StructField("artists_id", ArrayType(), True),
+        StructField("artists_id", ArrayType(StringType()), True),
         StructField("explicit", BooleanType(), True),
         StructField("duration", IntegerType(), True),
         StructField("track_name", StringType(), True),
@@ -108,16 +114,16 @@ def define_schema_top_tracks():
 
 def creates_likes_data(user_id):
     """Creates all JSON files for a specific user"""
-    print(f"Processing user: {user_id}")
+    print(f"Processing likes data for user: {user_id}")
 
     # Check if user has JSON files
     if not check_user_has_json_files(user_id):
         print(f"No JSON files found for user {user_id}, skipping...")
         return
     
-    # Output path for this user's parquet files
+    # Input and output paths
     input_path = f"{RAW_BASE_PATH}{user_id}/"
-    output_path = f"{PROCESSED_BASE_PATH}likes/user_{user_id}_likes.parquet"
+    output_path = f"{OUTPUT_PATHS['likes']}user_{user_id}.parquet"
     
     try:    
         schema_l = define_schema_likes()
@@ -126,10 +132,10 @@ def creates_likes_data(user_id):
             .json(f"{input_path}likes*.json")
         
         if df.count() == 0:
-            print(f"No data found for user {user_id}")
+            print(f"No likes data found for user {user_id}")
             return
             
-        print(f"Raw records for user {user_id}: {df.count()}")
+        print(f"Raw likes records for user {user_id}: {df.count()}")
         
         # Convert added_at to proper timestamps (UTC and Mexico timezone)
         df_cleaned = df.withColumn(
@@ -146,27 +152,32 @@ def creates_likes_data(user_id):
             .withColumn("user_id", lit(user_id)) \
             .fillna({
                 "track_name": "Unknown Track",
-                "artists_id": ["-1"], 
                 "album_id": "-1",
                 "track_popularity": 0,
                 "explicit": False,
-                "duration":0
+                "duration": 0
             }) \
             .withColumn("processed_at", current_timestamp())
+        
+        # Handle null arrays
+        df_cleaned = df_cleaned.withColumn(
+            "artists_id",
+            when(col("artists_id").isNull(), array(lit("-1"))).otherwise(col("artists_id"))
+        )
         
         # Reorder columns for better organization
         final_columns = [
             "user_id", "added_at_utc", "added_at_mexico", "track_id", "track_name", 
-            "artists_id", "album_id",  "track_popularity", "explicit", "duration",
+            "artists_id", "album_id", "track_popularity", "explicit", "duration",
             "processed_at"
         ]
         
         df_final = df_cleaned.select(*final_columns)
         
-        # Order by played_at_utc for better compression and queries
+        # Order by added_at_utc for better compression and queries
         df_final = df_final.orderBy("added_at_utc")
         
-        print(f"Clean records for user {user_id}: {df_final.count()}")
+        print(f"Clean likes records for user {user_id}: {df_final.count()}")
         
         # Write to Parquet with compression
         df_final.coalesce(1) \
@@ -175,36 +186,35 @@ def creates_likes_data(user_id):
             .option("compression", "snappy") \
             .parquet(output_path)
         
-        print(f"Successfully processed user {user_id} -> {output_path}")
+        print(f"Successfully processed likes for user {user_id} -> {output_path}")
         
         # Log data quality metrics
         total_records = df_final.count()
-        duplicate_records = df_cleaned.count() - total_records
         null_tracks = df.filter(col("track_id").isNull()).count()
         
-        print(f"Data Quality Report for {user_id}:")
+        print(f"Likes Data Quality Report for {user_id}:")
         print(f"  - Total clean records: {total_records}")
-        print(f"  - Duplicates removed: {duplicate_records}")
         print(f"  - Null track_ids found: {null_tracks}")
-        print(f"  - Date range (UTC): {df_final.agg(min('added_at_utc'), max('added_at_utc')).collect()[0]}")
-        print(f"  - Date range (Mexico): {df_final.agg(min('added_at_mexico'), max('added_at_mexico')).collect()[0]}")
+        if total_records > 0:
+            print(f"  - Date range (UTC): {df_final.agg(min('added_at_utc'), max('added_at_utc')).collect()[0]}")
+            print(f"  - Date range (Mexico): {df_final.agg(min('added_at_mexico'), max('added_at_mexico')).collect()[0]}")
         
     except Exception as e:
-        print(f"Error processing user {user_id}: {str(e)}")
+        print(f"Error processing likes for user {user_id}: {str(e)}")
         raise
 
 def creates_followed_data(user_id):
-    """Creates all JSON files for a specific user"""
-    print(f"Processing user: {user_id}")
+    """Creates followed artists data for a specific user"""
+    print(f"Processing followed artists data for user: {user_id}")
 
     # Check if user has JSON files
     if not check_user_has_json_files(user_id):
         print(f"No JSON files found for user {user_id}, skipping...")
         return
     
-    # Output path for this user's parquet files
+    # Input and output paths
     input_path = f"{RAW_BASE_PATH}{user_id}/"
-    output_path = f"{PROCESSED_BASE_PATH}followed/user_{user_id}_followed.parquet"
+    output_path = f"{OUTPUT_PATHS['followed_artists']}user_{user_id}.parquet"
     
     try:    
         schema_f = define_schema_followed()
@@ -213,14 +223,18 @@ def creates_followed_data(user_id):
             .json(f"{input_path}followed*.json")
         
         if df.count() == 0:
-            print(f"No data found for user {user_id}")
+            print(f"No followed artists data found for user {user_id}")
             return
             
-        print(f"Raw records for user {user_id}: {df.count()}")
+        print(f"Raw followed artists records for user {user_id}: {df.count()}")
         
-        # Handle null values and clean text fields
-        df_cleaned = df_cleaned \
+        # Handle null values and add metadata
+        df_cleaned = df \
             .withColumn("user_id", lit(user_id)) \
+            .withColumn("artist_id", col("artists_id")) \
+            .fillna({
+                "artist_id": "-1"
+            }) \
             .withColumn("processed_at", current_timestamp())
         
         # Reorder columns for better organization
@@ -230,7 +244,7 @@ def creates_followed_data(user_id):
         
         df_final = df_cleaned.select(*final_columns)
         
-        print(f"Clean records for user {user_id}: {df_final.count()}")
+        print(f"Clean followed artists records for user {user_id}: {df_final.count()}")
         
         # Write to Parquet with compression
         df_final.coalesce(1) \
@@ -239,30 +253,30 @@ def creates_followed_data(user_id):
             .option("compression", "snappy") \
             .parquet(output_path)
         
-        print(f"Successfully processed user {user_id} -> {output_path}")
+        print(f"Successfully processed followed artists for user {user_id} -> {output_path}")
         
         # Log data quality metrics
         total_records = df_final.count()
         
-        print(f"Data Quality Report for {user_id}:")
+        print(f"Followed Artists Data Quality Report for {user_id}:")
         print(f"  - Total clean records: {total_records}")
         
     except Exception as e:
-        print(f"Error processing user {user_id}: {str(e)}")
+        print(f"Error processing followed artists for user {user_id}: {str(e)}")
         raise
 
 def creates_top_tracks_data(user_id):
-    """Creates all parquet files for a specific user"""
-    print(f"Processing user: {user_id}")
+    """Creates top tracks data for a specific user"""
+    print(f"Processing top tracks data for user: {user_id}")
 
     # Check if user has JSON files
     if not check_user_has_json_files(user_id):
         print(f"No JSON files found for user {user_id}, skipping...")
         return
     
-    # Output path for this user's parquet files
+    # Input and output paths
     input_path = f"{RAW_BASE_PATH}{user_id}/"
-    output_path = f"{PROCESSED_BASE_PATH}top_tracks/user_{user_id}_top_tracks.parquet"
+    output_path = f"{OUTPUT_PATHS['top_tracks']}user_{user_id}.parquet"
     
     try:    
         schema_t = define_schema_top_tracks()
@@ -271,11 +285,10 @@ def creates_top_tracks_data(user_id):
             .json(f"{input_path}top_*.json")
         
         if df.count() == 0:
-            print(f"No data found for user {user_id}")
+            print(f"No top tracks data found for user {user_id}")
             return
             
-        print(f"Raw records for user {user_id}: {df.count()}")
-        
+        print(f"Raw top tracks records for user {user_id}: {df.count()}")
         
         # Handle null values and clean text fields
         df_cleaned = df \
@@ -283,27 +296,32 @@ def creates_top_tracks_data(user_id):
             .withColumn("track_name", trim(col("track_name"))) \
             .fillna({
                 "track_name": "Unknown Track",
-                "artists_id": ["-1"], 
                 "album_id": "-1",
                 "track_popularity": 0,
                 "explicit": False,
-                "duration":0
+                "duration": 0
             }) \
             .withColumn("processed_at", current_timestamp())
+        
+        # Handle null arrays
+        df_cleaned = df_cleaned.withColumn(
+            "artists_id",
+            when(col("artists_id").isNull(), array(lit("-1"))).otherwise(col("artists_id"))
+        )
         
         # Reorder columns for better organization
         final_columns = [
             "user_id", "ith_preference", "track_id", "track_name", 
-            "artists_id", "album_id",  "track_popularity", "explicit", "duration",
+            "artists_id", "album_id", "track_popularity", "explicit", "duration",
             "processed_at"
         ]
         
         df_final = df_cleaned.select(*final_columns)
         
-        # Order by played_at_utc for better compression and queries
+        # Order by ith_preference for better compression and queries
         df_final = df_final.orderBy("ith_preference")
         
-        print(f"Clean records for user {user_id}: {df_final.count()}")
+        print(f"Clean top tracks records for user {user_id}: {df_final.count()}")
         
         # Write to Parquet with compression
         df_final.coalesce(1) \
@@ -312,29 +330,30 @@ def creates_top_tracks_data(user_id):
             .option("compression", "snappy") \
             .parquet(output_path)
         
-        print(f"Successfully processed user {user_id} -> {output_path}")
+        print(f"Successfully processed top tracks for user {user_id} -> {output_path}")
         
         # Log data quality metrics
         total_records = df_final.count()
-        duplicate_records = df_cleaned.count() - total_records
         null_tracks = df.filter(col("track_id").isNull()).count()
         
-        print(f"Data Quality Report for {user_id}:")
+        print(f"Top Tracks Data Quality Report for {user_id}:")
         print(f"  - Total clean records: {total_records}")
-        print(f"  - Duplicates removed: {duplicate_records}")
         print(f"  - Null track_ids found: {null_tracks}")
         
     except Exception as e:
-        print(f"Error processing user {user_id}: {str(e)}")
+        print(f"Error processing top tracks for user {user_id}: {str(e)}")
         raise
 
 
 def main():
     """Main execution function"""
-    print("Starting Spotify history...")
+    print("Starting Spotify JSON data processing...")
     print(f"Input bucket: {INPUT_BUCKET}")
     print(f"Output bucket: {OUTPUT_BUCKET}")
     print(f"Target user: {USER_ID}")
+    print("Output paths:")
+    for data_type, path in OUTPUT_PATHS.items():
+        print(f"  - {data_type}: {path}")
     
     # Get list of users to process
     user_ids = get_user_directories()
@@ -346,12 +365,19 @@ def main():
     
     for user_id in user_ids:
         try:
+            print(f"\n{'='*60}")
+            print(f"Processing user: {user_id}")
+            print(f"{'='*60}")
+            
             creates_likes_data(user_id)
             creates_followed_data(user_id)
             creates_top_tracks_data(user_id)
             processed_users += 1
+            
+            print(f"✅ Successfully completed processing for user {user_id}")
+            
         except Exception as e:
-            print(f"Failed to process user {user_id}: {str(e)}")
+            print(f"❌ Failed to process user {user_id}: {str(e)}")
             failed_users.append(user_id)
     
     # Final summary
@@ -363,6 +389,12 @@ def main():
     print(f"Failed: {len(failed_users)}")
     if failed_users:
         print(f"Failed users: {failed_users}")
+    
+    print("\nOutput locations:")
+    for data_type, path in OUTPUT_PATHS.items():
+        print(f"  - {data_type}: {path}")
+    
+    print("\nData is now ready for Athena queries!")
     print("="*50)
 
 # Run the job
