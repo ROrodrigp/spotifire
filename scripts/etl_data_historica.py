@@ -108,7 +108,7 @@ def define_schema_likes():
 def define_schema_followed():
     """Define the schema for the JSON files 'followed artists' """
     return StructType([
-        StructField("artists_id", ArrayType(StringType()), True)
+        StructField("artists_ids", ArrayType(StringType()), True)  # Fixed: artists_ids (with 's')
     ])
 
 def define_schema_top_tracks():
@@ -287,7 +287,7 @@ def creates_followed_data(user_id):
                 .schema(schema_f) \
                 .json(file_path)
             
-            df_file = df_file.selectExpr("explode(artists_id) as artist_id")
+            df_file = df_file.selectExpr("explode(artists_ids) as artist_id")
 
             file_count = df_file.count()
             total_records_per_file[followed_file] = file_count
