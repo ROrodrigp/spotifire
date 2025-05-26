@@ -11,6 +11,7 @@ Uso:
 
 Opciones:
     --dry-run    Solo simula la operación sin realizar cambios en S3
+    --extension  Extensión de archivos a buscar (default: csv)
     --help       Muestra este mensaje de ayuda
 
 Configuración:
@@ -62,6 +63,11 @@ def parse_arguments():
         "--prefix",
         default=DEFAULT_S3_PREFIX,
         help=f"Prefijo en el bucket de S3 (default: {DEFAULT_S3_PREFIX})"
+    )
+    parser.add_argument(
+        "--extension",
+        default="csv",
+        help="Extensión de archivos a buscar (default: csv)"
     )
     parser.add_argument(
         "--dry-run",
@@ -143,7 +149,7 @@ def check_existing_files(bucket, prefix, dry_run=False):
         logger.error(f"Error al listar archivos existentes en S3: {e}")
         return set()
 
-def sync_user_data(user_dir, user_id, bucket, s3_prefix, existing_files, dry_run=False):
+def sync_user_data(user_dir, user_id, bucket, s3_prefix, existing_files, file_extension="csv", dry_run=False):
     """
     Sincroniza los archivos CSV de un usuario con S3
     
@@ -153,17 +159,18 @@ def sync_user_data(user_dir, user_id, bucket, s3_prefix, existing_files, dry_run
         bucket: Nombre del bucket de S3
         s3_prefix: Prefijo base en S3
         existing_files: Conjunto de archivos que ya existen en S3
+        file_extension: Extensión de archivos a buscar
         dry_run: Si es True, solo simula la operación
         
     Returns:
         Tupla con el número de archivos procesados, subidos y omitidos
     """
-    # Obtener lista de archivos CSV en el directorio del usuario
-    csv_pattern = os.path.join(user_dir, "*.csv")
-    csv_files = glob.glob(csv_pattern)
+    # Obtener lista de archivos con la extensión especificada en el directorio del usuario
+    file_pattern = os.path.join(user_dir, f"*.{file_extension}")
+    files = glob.glob(file_pattern)
     
-    if not csv_files:
-        logger.info(f"No se encontraron archivos CSV para el usuario {user_id}")
+    if not files:
+        logger.info(f"No se encontraron archivos {file_extension.upper()} para el usuario {user_id}")
         return 0, 0, 0
     
     # Contadores para estadísticas
@@ -171,9 +178,9 @@ def sync_user_data(user_dir, user_id, bucket, s3_prefix, existing_files, dry_run
     uploaded = 0
     skipped = 0
     
-    for csv_file in csv_files:
+    for file_path in files:
         processed += 1
-        file_name = os.path.basename(csv_file)
+        file_name = os.path.basename(file_path)
         
         # Construir la ruta completa en S3
         s3_object_name = f"{s3_prefix}/{user_id}/{file_name}"
@@ -185,7 +192,7 @@ def sync_user_data(user_dir, user_id, bucket, s3_prefix, existing_files, dry_run
             continue
         
         # Subir el archivo a S3
-        if upload_file_to_s3(csv_file, bucket, s3_object_name, dry_run):
+        if upload_file_to_s3(file_path, bucket, s3_object_name, dry_run):
             uploaded += 1
     
     logger.info(f"Usuario {user_id}: {processed} archivos procesados, {uploaded} subidos, {skipped} omitidos")
@@ -203,6 +210,8 @@ def main():
     # Modo de ejecución
     if args.dry_run:
         logger.info("Ejecutando en modo simulación (--dry-run)")
+    
+    logger.info(f"Buscando archivos con extensión: {args.extension}")
     
     # Obtener la lista de carpetas de usuarios
     user_dirs = [d for d in os.listdir(args.data_dir) 
@@ -229,7 +238,7 @@ def main():
         logger.info(f"Procesando usuario: {user_id}")
         
         processed, uploaded, skipped = sync_user_data(
-            user_dir, user_id, args.bucket, args.prefix, existing_files, args.dry_run
+            user_dir, user_id, args.bucket, args.prefix, existing_files, args.extension, args.dry_run
         )
         
         total_processed += processed
