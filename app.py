@@ -90,7 +90,7 @@ def submit_credentials():
                 client_id=client_id,
                 client_secret=client_secret,
                 redirect_uri=REDIRECT_URI,
-                scope="user-read-recently-played user-top-read"
+                scope="user-library-read user-read-recently-played user-top-read playlist-read-private playlist-read-collaborative user-follow-read"
             )
             
             if sp_oauth.is_token_expired(token_info):
@@ -162,7 +162,7 @@ def login():
         client_id=client_id,
         client_secret=client_secret,
         redirect_uri=REDIRECT_URI,
-        scope="user-read-recently-played user-top-read",
+        scope="user-library-read user-read-recently-played user-top-read playlist-read-private playlist-read-collaborative user-follow-read",
         state=state
     )
     
@@ -202,7 +202,7 @@ def callback():
         client_id=client_id,
         client_secret=client_secret,
         redirect_uri=REDIRECT_URI,
-        scope="user-read-recently-played user-top-read"
+        scope="user-library-read user-read-recently-played user-top-read playlist-read-private playlist-read-collaborative user-follow-read"
     )
     
     # Obtener token usando el código de autorización
@@ -301,7 +301,7 @@ def dashboard():
         client_id=client_id,
         client_secret=client_secret,
         redirect_uri=REDIRECT_URI,
-        scope="user-read-recently-played user-top-read"
+        scope="user-library-read user-read-recently-played user-top-read playlist-read-private playlist-read-collaborative user-follow-read"
     )
     
     if sp_oauth.is_token_expired(token_info):
