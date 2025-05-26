@@ -6,6 +6,8 @@ for Spotify analytics data stored in Parquet format on S3.
 This script creates multiple tables with predefined S3 locations.
 It includes error handling and logging for production environments.
 
+Updated to include the new artists_catalog table with partitioning.
+
 Usage:
     python3 create_glue_catalog.py [--database-name DATABASE] [--region REGION]
 """
@@ -35,7 +37,7 @@ class GlueCatalogManager:
     
     This class handles the creation and management of databases and tables
     in the AWS Glue Data Catalog, specifically designed for Parquet files
-    containing Spotify listening data.
+    containing Spotify listening data and artist catalog data.
     """
     
     def __init__(self, region_name='us-east-1'):
@@ -57,19 +59,28 @@ class GlueCatalogManager:
         self.table_configs = {
             'user_tracks': {
                 's3_location': 's3://itam-analytics-ragp/spotifire/processed/individual/',
-                'description': 'Unified table containing Spotify listening data for all users'
+                'description': 'Unified table containing Spotify listening data for all users',
+                'partitioned': False
             },
             'top_tracks': {
                 's3_location': 's3://itam-analytics-ragp/spotifire/processed/top_tracks/',
-                'description': 'Unified table containing Spotify top tracks data for all users'
+                'description': 'Unified table containing Spotify top tracks data for all users',
+                'partitioned': False
             },
             'likes': {
                 's3_location': 's3://itam-analytics-ragp/spotifire/processed/likes/',
-                'description': 'Unified table containing Spotify tracks liked data for all users'
+                'description': 'Unified table containing Spotify tracks liked data for all users',
+                'partitioned': False
             },
             'followed_artists': {
                 's3_location': 's3://itam-analytics-ragp/spotifire/processed/followed_artists/',
-                'description': 'Unified table containing Spotify followed artist data for all users'
+                'description': 'Unified table containing Spotify followed artist data for all users',
+                'partitioned': False
+            },
+            'artists_catalog': {
+                's3_location': 's3://itam-analytics-ragp/spotifire/processed/artists_catalog/',
+                'description': 'Catálogo de artistas de Spotify con información de popularidad y géneros',
+                'partitioned': True
             }
         }
     
@@ -133,7 +144,7 @@ class GlueCatalogManager:
         derived fields like play_hour, season, etc.
         
         Args:
-            table_type (str): Type of table ('user_tracks', 'top_tracks', 'likes', 'followed_artists')
+            table_type (str): Type of table ('user_tracks', 'top_tracks', 'likes', 'followed_artists', 'artists_catalog')
         
         Returns:
             list: List of column definitions for the table
@@ -366,8 +377,78 @@ class GlueCatalogManager:
                     'Comment': 'Timestamp of processing'
                 }
             ]
+        elif table_type == "artists_catalog":
+            return [
+                {
+                    'Name': 'id', 
+                    'Type': 'string', 
+                    'Comment': 'Unique Spotify artist ID'
+                },
+                {
+                    'Name': 'name', 
+                    'Type': 'string', 
+                    'Comment': 'Artist name'
+                },
+                {
+                    'Name': 'popularity', 
+                    'Type': 'int', 
+                    'Comment': 'Spotify popularity score (0-100)'
+                },
+                {
+                    'Name': 'followers', 
+                    'Type': 'bigint', 
+                    'Comment': 'Number of followers'
+                },
+                {
+                    'Name': 'genres', 
+                    'Type': 'array<string>', 
+                    'Comment': 'List of genres'
+                },
+                {
+                    'Name': 'followers_tier', 
+                    'Type': 'string', 
+                    'Comment': 'Follower count tier (niche, emerging, established, major, mega)'
+                },
+                {
+                    'Name': 'processed_at', 
+                    'Type': 'timestamp', 
+                    'Comment': 'Processing timestamp'
+                },
+                {
+                    'Name': 'data_source', 
+                    'Type': 'string', 
+                    'Comment': 'Source of the data'
+                }
+            ]
         else:
             raise ValueError(f"Unknown table type: {table_type}")
+    
+    def get_partition_keys(self, table_type):
+        """
+        Define partition keys for tables that support partitioning.
+        
+        Args:
+            table_type (str): Type of table
+            
+        Returns:
+            list: List of partition key definitions, empty list if table is not partitioned
+        """
+        if table_type == "artists_catalog":
+            return [
+                {
+                    'Name': 'popularity_range', 
+                    'Type': 'string', 
+                    'Comment': 'Popularity tier (very_low, low, medium, high, very_high)'
+                },
+                {
+                    'Name': 'primary_genre', 
+                    'Type': 'string', 
+                    'Comment': 'Primary music genre category'
+                }
+            ]
+        else:
+            # Other tables are not partitioned
+            return []
     
     def create_table(self, database_name, table_name):
         """
@@ -379,7 +460,7 @@ class GlueCatalogManager:
         
         Args:
             database_name (str): Name of the database to contain the table
-            table_name (str): Name of the table to create. One of: ['user_tracks', 'top_tracks', 'likes', 'followed_artists']
+            table_name (str): Name of the table to create. One of: ['user_tracks', 'top_tracks', 'likes', 'followed_artists', 'artists_catalog']
             
         Returns:
             bool: True if successful, False otherwise
@@ -391,48 +472,59 @@ class GlueCatalogManager:
         table_config = self.table_configs[table_name]
         s3_location = table_config['s3_location']
         description = table_config['description']
+        is_partitioned = table_config['partitioned']
         
         logger.info(f"Creating table: {database_name}.{table_name}")
         logger.info(f"S3 location: {s3_location}")
+        logger.info(f"Partitioned: {is_partitioned}")
         
         # Get the schema definition
         table_schema = self.get_table_schema(table_name)
+        partition_keys = self.get_partition_keys(table_name)
+        
+        # Build table input structure
+        table_input = {
+            'Name': table_name,
+            'Description': description,
+            'TableType': 'EXTERNAL_TABLE',
+            'Parameters': {
+                'EXTERNAL': 'TRUE',
+                'parquet.compression': 'SNAPPY',
+                'classification': 'parquet',
+                'created_by': 'spotify_etl_pipeline',
+                'created_at': datetime.now().isoformat(),
+                'data_source': 'spotify_api',
+                'update_frequency': 'daily'
+            },
+            'StorageDescriptor': {
+                'Columns': table_schema,
+                'Location': s3_location,
+                'InputFormat': 'org.apache.hadoop.mapred.TextInputFormat',
+                'OutputFormat': 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat',
+                'SerdeInfo': {
+                    'SerializationLibrary': 'org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe',
+                    'Parameters': {
+                        'serialization.format': '1'
+                    }
+                },
+                'Parameters': {
+                    'classification': 'parquet',
+                    'compressionType': 'snappy',
+                    'typeOfData': 'file'
+                }
+            }
+        }
+        
+        # Add partition keys if the table is partitioned
+        if partition_keys:
+            table_input['PartitionKeys'] = partition_keys
+            logger.info(f"Table will be partitioned by: {[pk['Name'] for pk in partition_keys]}")
         
         try:
             # Create the table with full configuration for Parquet files
             self.glue_client.create_table(
                 DatabaseName=database_name,
-                TableInput={
-                    'Name': table_name,
-                    'Description': description,
-                    'TableType': 'EXTERNAL_TABLE',
-                    'Parameters': {
-                        'EXTERNAL': 'TRUE',
-                        'parquet.compression': 'SNAPPY',
-                        'classification': 'parquet',
-                        'created_by': 'spotify_etl_pipeline',
-                        'created_at': datetime.now().isoformat(),
-                        'data_source': 'spotify_api',
-                        'update_frequency': 'daily'
-                    },
-                    'StorageDescriptor': {
-                        'Columns': table_schema,
-                        'Location': s3_location,
-                        'InputFormat': 'org.apache.hadoop.mapred.TextInputFormat',
-                        'OutputFormat': 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat',
-                        'SerdeInfo': {
-                            'SerializationLibrary': 'org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe',
-                            'Parameters': {
-                                'serialization.format': '1'
-                            }
-                        },
-                        'Parameters': {
-                            'classification': 'parquet',
-                            'compressionType': 'snappy',
-                            'typeOfData': 'file'
-                        }
-                    }
-                }
+                TableInput=table_input
             )
             
             logger.info(f"Successfully created table: {database_name}.{table_name}")
@@ -478,43 +570,52 @@ class GlueCatalogManager:
         table_config = self.table_configs[table_name]
         s3_location = table_config['s3_location']
         description = table_config['description'] + " (UPDATED)"
+        is_partitioned = table_config['partitioned']
         
         table_schema = self.get_table_schema(table_name)
+        partition_keys = self.get_partition_keys(table_name)
+        
+        # Build table input structure for update
+        table_input = {
+            'Name': table_name,
+            'Description': description,
+            'TableType': 'EXTERNAL_TABLE',
+            'Parameters': {
+                'EXTERNAL': 'TRUE',
+                'parquet.compression': 'SNAPPY',
+                'classification': 'parquet',
+                'updated_by': 'spotify_etl_pipeline',
+                'updated_at': datetime.now().isoformat(),
+                'data_source': 'spotify_api',
+                'update_frequency': 'daily'
+            },
+            'StorageDescriptor': {
+                'Columns': table_schema,
+                'Location': s3_location,
+                'InputFormat': 'org.apache.hadoop.mapred.TextInputFormat',
+                'OutputFormat': 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat',
+                'SerdeInfo': {
+                    'SerializationLibrary': 'org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe',
+                    'Parameters': {
+                        'serialization.format': '1'
+                    }
+                },
+                'Parameters': {
+                    'classification': 'parquet',
+                    'compressionType': 'snappy',
+                    'typeOfData': 'file'
+                }
+            }
+        }
+        
+        # Add partition keys if the table is partitioned
+        if partition_keys:
+            table_input['PartitionKeys'] = partition_keys
         
         try:
             self.glue_client.update_table(
                 DatabaseName=database_name,
-                TableInput={
-                    'Name': table_name,
-                    'Description': description,
-                    'TableType': 'EXTERNAL_TABLE',
-                    'Parameters': {
-                        'EXTERNAL': 'TRUE',
-                        'parquet.compression': 'SNAPPY',
-                        'classification': 'parquet',
-                        'updated_by': 'spotify_etl_pipeline',
-                        'updated_at': datetime.now().isoformat(),
-                        'data_source': 'spotify_api',
-                        'update_frequency': 'daily'
-                    },
-                    'StorageDescriptor': {
-                        'Columns': table_schema,
-                        'Location': s3_location,
-                        'InputFormat': 'org.apache.hadoop.mapred.TextInputFormat',
-                        'OutputFormat': 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat',
-                        'SerdeInfo': {
-                            'SerializationLibrary': 'org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe',
-                            'Parameters': {
-                                'serialization.format': '1'
-                            }
-                        },
-                        'Parameters': {
-                            'classification': 'parquet',
-                            'compressionType': 'snappy',
-                            'typeOfData': 'file'
-                        }
-                    }
-                }
+                TableInput=table_input
             )
             
             logger.info(f"Successfully updated table: {database_name}.{table_name}")
@@ -555,6 +656,13 @@ class GlueCatalogManager:
             logger.info(f"Table location: {table_info['StorageDescriptor']['Location']}")
             logger.info(f"Number of columns: {len(table_info['StorageDescriptor']['Columns'])}")
             
+            # Check if table has partitions
+            if 'PartitionKeys' in table_info and table_info['PartitionKeys']:
+                partition_names = [pk['Name'] for pk in table_info['PartitionKeys']]
+                logger.info(f"Table partitions: {partition_names}")
+            else:
+                logger.info("Table is not partitioned")
+            
             return True
             
         except ClientError as e:
@@ -590,7 +698,8 @@ class GlueCatalogManager:
             results[table_name] = {
                 'created': table_success,
                 'verified': verification_success,
-                's3_location': self.table_configs[table_name]['s3_location']
+                's3_location': self.table_configs[table_name]['s3_location'],
+                'partitioned': self.table_configs[table_name]['partitioned']
             }
             
             logger.info(f"Table {table_name}: Created={table_success}, Verified={verification_success}")
@@ -630,7 +739,8 @@ def main():
         
         logger.info(f"Tables to be created: {list(catalog_manager.table_configs.keys())}")
         for table_name, config in catalog_manager.table_configs.items():
-            logger.info(f"  - {table_name}: {config['s3_location']}")
+            partition_status = " (PARTITIONED)" if config['partitioned'] else ""
+            logger.info(f"  - {table_name}: {config['s3_location']}{partition_status}")
         
         # Create database
         database_success = catalog_manager.create_database(
@@ -661,7 +771,8 @@ def main():
             logger.info("\n✅ Successfully created tables:")
             for table_name in successful_tables:
                 s3_location = table_results[table_name]['s3_location']
-                logger.info(f"  - {table_name}: {s3_location}")
+                partitioned = " (PARTITIONED)" if table_results[table_name]['partitioned'] else ""
+                logger.info(f"  - {table_name}: {s3_location}{partitioned}")
         
         if failed_tables:
             logger.error("\n❌ Failed tables:")
@@ -681,10 +792,17 @@ def main():
             logger.info(f"  FROM {args.database_name}.top_tracks")
             logger.info(f"  WHERE ith_preference <= 5;")
             logger.info(f"")
-            logger.info(f"  -- Liked tracks by user")
-            logger.info(f"  SELECT user_id, COUNT(*) as liked_tracks")
-            logger.info(f"  FROM {args.database_name}.likes")
-            logger.info(f"  GROUP BY user_id;")
+            logger.info(f"  -- Artists by popularity and genre (NEW TABLE)")
+            logger.info(f"  SELECT name, popularity, followers, primary_genre")
+            logger.info(f"  FROM {args.database_name}.artists_catalog")
+            logger.info(f"  WHERE popularity_range = 'very_high' AND primary_genre = 'latin'")
+            logger.info(f"  ORDER BY followers DESC;")
+            logger.info(f"")
+            logger.info(f"  -- Genre distribution analysis")
+            logger.info(f"  SELECT primary_genre, COUNT(*) as artist_count,")
+            logger.info(f"         AVG(popularity) as avg_popularity")
+            logger.info(f"  FROM {args.database_name}.artists_catalog")
+            logger.info(f"  GROUP BY primary_genre ORDER BY artist_count DESC;")
         
         # Exit with appropriate code
         if failed_tables:
