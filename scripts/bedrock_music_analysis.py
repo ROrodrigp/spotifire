@@ -2,6 +2,7 @@
 """
 Analizador de dimensiones musicales usando AWS Bedrock.
 Enfoque incremental inteligente: Usa LEFT JOIN para procesar solo canciones nuevas.
+MODIFICADO: Preserva track_id para hacer JOIN correcto con tracks_psychological_analysis.
 """
 
 import boto3
@@ -19,6 +20,7 @@ class MusicDimensionsAnalyzer:
     """
     Analizador simple que usa LEFT JOIN para evitar duplicados.
     Mucho más limpio que mantener archivos de tracking.
+    MODIFICADO: Preserva track_id correctamente.
     """
     
     def __init__(self, region_name='us-east-1', database_name='spotify_analytics', aws_profile=None, model_id=None, batch_size=5):
@@ -76,6 +78,7 @@ class MusicDimensionsAnalyzer:
         """
         Obtiene canciones que están en user_tracks pero NO en tracks_psychological_analysis.
         ¡Este es el enfoque elegante que sugeriste!
+        IMPORTANTE: Incluye track_id para el JOIN posterior.
         """
         logger.info(f"Buscando canciones sin análisis psicológico (límite: {limit})")
         
@@ -140,6 +143,16 @@ class MusicDimensionsAnalyzer:
             df = pd.DataFrame(rows, columns=columns)
             
             logger.info(f"✅ Encontradas {len(df)} canciones pendientes de análisis")
+            logger.debug(f"Columnas obtenidas: {list(df.columns)}")
+            
+            # Verificar que tenemos track_id
+            if 'track_id' not in df.columns:
+                raise Exception("ERROR: track_id no está en los resultados de Athena")
+            
+            # Log de muestra para verificar datos
+            if len(df) > 0:
+                sample = df.iloc[0]
+                logger.debug(f"Muestra de datos: track_id='{sample['track_id']}', track_name='{sample['track_name']}'")
             
             return df
             
@@ -212,10 +225,32 @@ class MusicDimensionsAnalyzer:
             return {'error': str(e)}
     
     def create_analysis_prompt(self, songs_batch: List[Dict]) -> str:
-        """Crea prompt para analizar lote de canciones (método original)."""
+        """
+        Crea prompt para analizar lote de canciones.
+        MODIFICADO: Incluye track_id explícitamente en cada canción.
+        """
         songs_text = ""
         for i, song in enumerate(songs_batch, 1):
-            songs_text += f"{i}. '{song['track_name']}' por {song['artist_name']} (Álbum: {song['album_name']})\n"
+            # IMPORTANTE: Incluir track_id en la descripción para que Claude lo preserve
+            songs_text += f"{i}. '{song['track_name']}' por {song['artist_name']} (Álbum: {song['album_name']}) [ID: {song['track_id']}]\n"
+        
+        # Crear ejemplos con los track_ids reales para el formato JSON
+        json_examples = []
+        for song in songs_batch:
+            json_examples.append(f"""    {{
+      "track_name": "{song['track_name']}",
+      "artist_name": "{song['artist_name']}",
+      "album_name": "{song['album_name']}",
+      "track_id": "{song['track_id']}",
+      "dimensiones": {{
+        "energia_alta": 85,
+        "energia_media": 20,
+        "energia_baja": 5,
+        // ... todas las dimensiones ...
+      }}
+    }}""")
+        
+        json_example_text = ",\n".join(json_examples[:2])  # Mostrar solo 2 ejemplos para no saturar
         
         prompt = f"""
 Eres un musicólogo experto con profundo conocimiento en psicología musical y análisis emocional. Analiza las siguientes canciones y asigna porcentajes precisos (0-100) a cada dimensión.
@@ -265,53 +300,19 @@ Para cada canción, analiza estas 29 dimensiones:
 - contemplacion_filosofica: Invita a reflexiones profundas sobre la existencia
 - conexion_social: Facilita sentimientos de pertenencia y comunidad
 
+CRÍTICO: Debes usar EXACTAMENTE los mismos track_id que aparecen entre [ID: ...] en la lista de canciones.
+
 FORMATO DE RESPUESTA (JSON estricto):
 ```json
 {{
   "analisis_musical": [
-    {{
-      "track_name": "nombre_exacto_cancion",
-      "artist_name": "nombre_exacto_artista",
-      "album_name": "nombre_exacto_album",
-      "track_id": "track_id_exacto",
-      "dimensiones": {{
-        "energia_alta": 85,
-        "energia_media": 20,
-        "energia_baja": 5,
-        "tempo_rapido": 90,
-        "tempo_medio": 15,
-        "tempo_lento": 5,
-        "euforia": 80,
-        "melancolia": 10,
-        "serenidad": 15,
-        "intensidad_dramatica": 70,
-        "misterio": 20,
-        "calidez": 40,
-        "ejercicio_deporte": 95,
-        "trabajo_concentracion": 30,
-        "social_fiesta": 90,
-        "introspección": 10,
-        "relajacion_descanso": 5,
-        "viaje_movimiento": 80,
-        "nostalgia_retro": 20,
-        "vanguardia_experimental": 40,
-        "authenticity_underground": 60,
-        "universalidad": 70,
-        "regionalidad": 30,
-        "atemporalidad": 50,
-        "estimulacion_creativa": 75,
-        "procesamiento_emocional": 25,
-        "escape_mental": 80,
-        "motivacion_impulso": 90,
-        "contemplacion_filosofica": 15,
-        "conexion_social": 85
-      }}
-    }}
+{json_example_text}
   ]
 }}
 ```
 
 Responde ÚNICAMENTE con el JSON válido, sin texto adicional.
+Asegúrate de incluir TODOS los track_id correctos tal como aparecen en la lista.
 """
         return prompt
     
@@ -356,8 +357,11 @@ Responde ÚNICAMENTE con el JSON válido, sin texto adicional.
                 logger.error(f"Error al llamar a Bedrock: {error_msg}")
             raise
     
-    def parse_llm_response(self, response_text: str) -> List[Dict]:
-        """Parsea respuesta de Claude."""
+    def parse_llm_response(self, response_text: str, expected_track_ids: List[str]) -> List[Dict]:
+        """
+        Parsea respuesta de Claude y valida que los track_ids coincidan.
+        MODIFICADO: Validación adicional de track_ids.
+        """
         try:
             response_text = response_text.strip()
             start_idx = response_text.find('{')
@@ -372,24 +376,61 @@ Responde ÚNICAMENTE con el JSON válido, sin texto adicional.
             if 'analisis_musical' not in parsed_response:
                 raise ValueError("Respuesta no contiene 'analisis_musical'")
             
-            return parsed_response['analisis_musical']
+            analyses = parsed_response['analisis_musical']
+            
+            # VALIDACIÓN CRÍTICA: Verificar que todos los track_ids están presentes
+            returned_track_ids = [analysis.get('track_id') for analysis in analyses]
+            missing_track_ids = set(expected_track_ids) - set(returned_track_ids)
+            unexpected_track_ids = set(returned_track_ids) - set(expected_track_ids)
+            
+            if missing_track_ids:
+                logger.warning(f"⚠️  Track IDs faltantes en respuesta: {missing_track_ids}")
+            
+            if unexpected_track_ids:
+                logger.warning(f"⚠️  Track IDs inesperados en respuesta: {unexpected_track_ids}")
+            
+            # Filtrar solo análisis con track_ids válidos
+            valid_analyses = []
+            for analysis in analyses:
+                if analysis.get('track_id') in expected_track_ids:
+                    valid_analyses.append(analysis)
+                    logger.debug(f"✅ Análisis válido para track_id: {analysis.get('track_id')}")
+                else:
+                    logger.warning(f"❌ Análisis descartado por track_id inválido: {analysis.get('track_id')}")
+            
+            logger.info(f"📊 Análisis válidos: {len(valid_analyses)}/{len(expected_track_ids)}")
+            return valid_analyses
             
         except Exception as e:
             logger.error(f"Error parseando respuesta: {str(e)}")
+            logger.debug(f"Respuesta problemática: {response_text[:500]}...")
             raise
     
     def analyze_songs_batch(self, songs_batch: List[Dict]) -> List[Dict]:
-        """Analiza un lote de canciones usando Bedrock."""
+        """
+        Analiza un lote de canciones usando Bedrock.
+        MODIFICADO: Incluye validación de track_ids.
+        """
         logger.info(f"🧠 Analizando lote de {len(songs_batch)} canciones con Claude...")
+        
+        # Extraer track_ids esperados para validación
+        expected_track_ids = [song['track_id'] for song in songs_batch]
+        logger.debug(f"Track IDs esperados: {expected_track_ids}")
         
         for attempt in range(self.max_retries):
             try:
                 # Crear prompt y llamar a Bedrock
                 prompt = self.create_analysis_prompt(songs_batch)
                 response = self.call_bedrock_claude(prompt)
-                analyses = self.parse_llm_response(response)
+                analyses = self.parse_llm_response(response, expected_track_ids)
                 
                 logger.info(f"✅ Análisis completado para {len(analyses)} canciones")
+                
+                # Verificar que todos los track_ids fueron procesados
+                if len(analyses) < len(expected_track_ids):
+                    missing_count = len(expected_track_ids) - len(analyses)
+                    logger.warning(f"⚠️  {missing_count} canciones no fueron analizadas completamente")
+                
                 return analyses
                 
             except Exception as e:
@@ -425,6 +466,7 @@ Responde ÚNICAMENTE con el JSON válido, sin texto adicional.
         """
         Procesa canciones que no tienen análisis psicológico.
         ¡Usa el enfoque simple con LEFT JOIN!
+        MODIFICADO: Preserva track_ids para JOIN correcto.
         """
         logger.info(f"🚀 Procesando hasta {max_songs} canciones sin análisis")
         
@@ -452,9 +494,24 @@ Responde ÚNICAMENTE con el JSON válido, sin texto adicional.
         
         logger.info(f"🎯 Analizando {len(unprocessed_df)} canciones pendientes")
         
+        # VERIFICACIÓN CRÍTICA: Asegurar que tenemos track_ids
+        if 'track_id' not in unprocessed_df.columns:
+            raise Exception("ERROR CRÍTICO: track_id no está disponible en los datos")
+        
+        # Verificar que no hay track_ids nulos
+        null_track_ids = unprocessed_df['track_id'].isnull().sum()
+        if null_track_ids > 0:
+            logger.warning(f"⚠️  Encontrados {null_track_ids} track_ids nulos, filtrando...")
+            unprocessed_df = unprocessed_df.dropna(subset=['track_id'])
+        
         # Convertir a lista y procesar en lotes
         songs_list = unprocessed_df.to_dict('records')
         all_analyses = []
+        
+        # Log de muestra para verificar estructura
+        if songs_list:
+            sample_song = songs_list[0]
+            logger.info(f"📝 Muestra de canción: {sample_song['track_name']} (ID: {sample_song['track_id']})")
         
         for i in range(0, len(songs_list), self.batch_size):
             batch = songs_list[i:i + self.batch_size]
@@ -463,9 +520,17 @@ Responde ÚNICAMENTE con el JSON válido, sin texto adicional.
             
             logger.info(f"📦 Procesando lote {batch_num}/{total_batches}")
             
+            # Log de track_ids del lote para debugging
+            batch_track_ids = [song['track_id'] for song in batch]
+            logger.debug(f"Track IDs del lote: {batch_track_ids}")
+            
             try:
                 batch_analyses = self.analyze_songs_batch(batch)
                 all_analyses.extend(batch_analyses)
+                
+                # Verificar track_ids en el resultado del lote
+                result_track_ids = [analysis['track_id'] for analysis in batch_analyses]
+                logger.debug(f"Track IDs analizados: {result_track_ids}")
                 
                 # Pausa entre lotes
                 if i + self.batch_size < len(songs_list):
@@ -475,18 +540,40 @@ Responde ÚNICAMENTE con el JSON válido, sin texto adicional.
                 logger.error(f"❌ Error en lote {batch_num}: {str(e)}")
                 continue
         
-        # Guardar resultados
+        # Verificación final de track_ids
+        final_track_ids = [analysis.get('track_id') for analysis in all_analyses]
+        original_track_ids = [song['track_id'] for song in songs_list]
+        
+        logger.info(f"🔍 Verificación final:")
+        logger.info(f"   • Track IDs originales: {len(original_track_ids)}")
+        logger.info(f"   • Track IDs analizados: {len(final_track_ids)}")
+        logger.info(f"   • Track IDs únicos analizados: {len(set(final_track_ids))}")
+        
+        missing_track_ids = set(original_track_ids) - set(final_track_ids)
+        if missing_track_ids:
+            logger.warning(f"⚠️  Track IDs no analizados: {len(missing_track_ids)}")
+            logger.debug(f"Track IDs faltantes: {list(missing_track_ids)[:5]}...")
+        
+        # Calcular métricas de integridad para logging (no se guardan en el JSON)
+        track_id_integrity = {
+            'original_count': len(original_track_ids),
+            'analyzed_count': len(final_track_ids),
+            'missing_count': len(missing_track_ids),
+            'success_rate': round((len(final_track_ids) / len(original_track_ids)) * 100, 1) if original_track_ids else 0
+        }
+        
+        # Guardar resultados (solo metadata básica, sin métricas de integridad)
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file = f"simple_analysis_{timestamp}.json"
+        output_file = f"analysis_with_track_ids_{timestamp}.json"
         
         output_data = {
             'metadata': {
                 'generated_at': end_time.isoformat(),
                 'duration_seconds': duration,
                 'songs_processed': len(all_analyses),
-                'approach': 'LEFT_JOIN_incremental',
+                'approach': 'LEFT_JOIN_incremental_with_track_id_validation',
                 'database': self.database_name,
                 'aws_profile': self.aws_profile or 'default',
                 'model_id': self.model_id
@@ -502,6 +589,8 @@ Responde ÚNICAMENTE con el JSON válido, sin texto adicional.
         
         logger.info(f"🎉 Análisis completado!")
         logger.info(f"   • Canciones procesadas: {len(all_analyses)}")
+        logger.info(f"   • Track IDs preservados: {len(set(final_track_ids))}")
+        logger.info(f"   • Tasa de éxito: {track_id_integrity['success_rate']:.1f}%")
         logger.info(f"   • Duración: {duration:.1f} segundos")
         logger.info(f"   • Progreso actual: {final_stats.get('completion_percentage', 0):.1f}%")
         logger.info(f"   • Archivo guardado: {output_file}")
@@ -513,7 +602,8 @@ Responde ÚNICAMENTE con el JSON válido, sin texto adicional.
             'duration_seconds': duration,
             'initial_stats': initial_stats,
             'final_stats': final_stats,
-            'progress_improvement': final_stats.get('completion_percentage', 0) - initial_stats.get('completion_percentage', 0)
+            'progress_improvement': final_stats.get('completion_percentage', 0) - initial_stats.get('completion_percentage', 0),
+            'track_id_integrity': track_id_integrity
         }
 
 
@@ -614,11 +704,18 @@ def main():
         if result['success']:
             print(f"\n🎉 ¡Procesamiento completado!")
             print(f"📈 Canciones analizadas: {result['songs_processed']}")
+            print(f"🔑 Track IDs preservados: {result['track_id_integrity']['analyzed_count']}")
+            print(f"✅ Tasa de éxito: {result['track_id_integrity']['success_rate']:.1f}%")
             print(f"⏱️  Duración: {result['duration_seconds']:.1f} segundos")
             print(f"📄 Archivo: {result['output_file']}")
             
             if 'progress_improvement' in result:
                 print(f"📊 Mejora en progreso: +{result['progress_improvement']:.1f}%")
+            
+            # Advertencias si hay problemas con track_ids
+            track_integrity = result['track_id_integrity']
+            if track_integrity['missing_count'] > 0:
+                print(f"⚠️  Advertencia: {track_integrity['missing_count']} canciones no se procesaron completamente")
             
             final_stats = result.get('final_stats', {})
             if final_stats.get('tracks_pending', 0) > 0:
