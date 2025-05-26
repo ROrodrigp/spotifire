@@ -63,21 +63,34 @@ def get_user_directories():
     
     return user_dirs
 
-def check_user_has_json_files(user_id):
-    """Check if user directory contains JSON files"""
+def check_specific_json_files(user_id):
+    """Check which specific JSON files exist for the user"""
     s3_client = boto3.client('s3')
     
     response = s3_client.list_objects_v2(
         Bucket=INPUT_BUCKET,
-        Prefix=f'spotifire/raw/{user_id}/',
-        MaxKeys=1
+        Prefix=f'spotifire/raw/{user_id}/'
     )
     
-    # Check if any objects exist and at least one is a JSON
+    files = {
+        'likes': [],
+        'followed': [],
+        'top_tracks': []
+    }
+    
     for obj in response.get('Contents', []):
-        if obj['Key'].endswith('.json'):
-            return True
-    return False
+        key = obj['Key']
+        filename = key.split('/')[-1]
+        
+        if filename.endswith('.json'):
+            if 'likes' in filename:
+                files['likes'].append(filename)
+            elif 'followed' in filename:
+                files['followed'].append(filename)
+            elif 'top_' in filename:
+                files['top_tracks'].append(filename)
+    
+    return files
 
 def define_schema_likes():
     """Define the schema for the JSON files 'likes' """
@@ -86,7 +99,7 @@ def define_schema_likes():
         StructField("album_id", StringType(), True),
         StructField("artists_id", ArrayType(StringType()), True),
         StructField("explicit", BooleanType(), True),
-        StructField("duration", IntegerType(), True),
+        StructField("duration_ms", IntegerType(), True),
         StructField("track_name", StringType(), True),
         StructField("track_popularity", IntegerType(), True),
         StructField("added_at", StringType(), True)
@@ -95,7 +108,7 @@ def define_schema_likes():
 def define_schema_followed():
     """Define the schema for the JSON files 'followed artists' """
     return StructType([
-        StructField("artists_id", StringType(), True)
+        StructField("artists_id", ArrayType(StringType()), True)
     ])
 
 def define_schema_top_tracks():
@@ -106,20 +119,25 @@ def define_schema_top_tracks():
         StructField("album_id", StringType(), True),
         StructField("artists_id", ArrayType(StringType()), True),
         StructField("explicit", BooleanType(), True),
-        StructField("duration", IntegerType(), True),
+        StructField("duration_ms", IntegerType(), True),
         StructField("track_name", StringType(), True),
         StructField("track_popularity", IntegerType(), True)
     ])
 
 
 def creates_likes_data(user_id):
-    """Creates all JSON files for a specific user"""
+    """Creates likes data for a specific user"""
     print(f"Processing likes data for user: {user_id}")
 
-    # Check if user has JSON files
-    if not check_user_has_json_files(user_id):
-        print(f"No JSON files found for user {user_id}, skipping...")
+    # Check which specific files exist
+    files = check_specific_json_files(user_id)
+    likes_files = files['likes']
+    
+    if not likes_files:
+        print(f"No likes JSON files found for user {user_id}, skipping...")
         return
+    
+    print(f"Found likes files for user {user_id}: {likes_files}")
     
     # Input and output paths
     input_path = f"{RAW_BASE_PATH}{user_id}/"
@@ -127,24 +145,47 @@ def creates_likes_data(user_id):
     
     try:    
         schema_l = define_schema_likes()
-        df = spark.read \
-            .schema(schema_l) \
-            .json(f"{input_path}likes*.json")
         
-        if df.count() == 0:
-            print(f"No likes data found for user {user_id}")
-            return
+        # Process each likes file explicitly to track what we're reading
+        all_dfs = []
+        total_records_per_file = {}
+        
+        for likes_file in likes_files:
+            file_path = f"{input_path}{likes_file}"
+            print(f"Reading file: {file_path}")
             
-        print(f"Raw likes records for user {user_id}: {df.count()}")
+            df_file = spark.read \
+                .option("multiline", "true") \
+                .schema(schema_l) \
+                .json(file_path)
+            
+            file_count = df_file.count()
+            total_records_per_file[likes_file] = file_count
+            print(f"  - Records in {likes_file}: {file_count}")
+            
+            if file_count > 0:
+                # Add source file info for tracking
+                df_file = df_file.withColumn("source_file", lit(likes_file))
+                all_dfs.append(df_file)
+        
+        if not all_dfs:
+            print(f"No valid likes data found for user {user_id}")
+            return
+        
+        # Combine all DataFrames
+        if len(all_dfs) == 1:
+            df = all_dfs[0]
+        else:
+            df = all_dfs[0]
+            for df_additional in all_dfs[1:]:
+                df = df.union(df_additional)
+        
+        print(f"Total combined likes records for user {user_id}: {df.count()}")
+        print(f"Records breakdown: {total_records_per_file}")
         
         # Convert added_at to proper timestamps (UTC and Mexico timezone)
-        df_cleaned = df.withColumn(
-            "added_at_utc",
-            to_timestamp(col("added_at"), "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
-        ).withColumn(
-            "added_at_mexico", 
-            from_utc_timestamp(col("added_at_utc"), "America/Mexico_City")
-        ).drop("added_at")
+        df_cleaned = df.selectExpr("*", "timestamp(added_at) as added_at_utc").drop("added_at")
+        df_cleaned = df_cleaned.selectExpr("*","from_utc_timestamp(added_at_utc, 'America/Mexico_City') as added_at_mexico")
         
         # Handle null values and clean text fields
         df_cleaned = df_cleaned \
@@ -155,7 +196,7 @@ def creates_likes_data(user_id):
                 "album_id": "-1",
                 "track_popularity": 0,
                 "explicit": False,
-                "duration": 0
+                "duration_ms": 0
             }) \
             .withColumn("processed_at", current_timestamp())
         
@@ -165,19 +206,26 @@ def creates_likes_data(user_id):
             when(col("artists_id").isNull(), array(lit("-1"))).otherwise(col("artists_id"))
         )
         
-        # Reorder columns for better organization
+        # Remove duplicates based on track_id and added_at_utc to handle potential duplicates from multiple files
+        df_deduplicated = df_cleaned.dropDuplicates(["track_id", "added_at_utc"])
+        
+        duplicates_removed = df_cleaned.count() - df_deduplicated.count()
+        if duplicates_removed > 0:
+            print(f"Removed {duplicates_removed} duplicate records")
+        
+        # Reorder columns for better organization (remove source_file from final output)
         final_columns = [
             "user_id", "added_at_utc", "added_at_mexico", "track_id", "track_name", 
-            "artists_id", "album_id", "track_popularity", "explicit", "duration",
+            "artists_id", "album_id", "track_popularity", "explicit", "duration_ms",
             "processed_at"
         ]
         
-        df_final = df_cleaned.select(*final_columns)
+        df_final = df_deduplicated.select(*final_columns)
         
         # Order by added_at_utc for better compression and queries
         df_final = df_final.orderBy("added_at_utc")
         
-        print(f"Clean likes records for user {user_id}: {df_final.count()}")
+        print(f"Final clean likes records for user {user_id}: {df_final.count()}")
         
         # Write to Parquet with compression
         df_final.coalesce(1) \
@@ -194,10 +242,12 @@ def creates_likes_data(user_id):
         
         print(f"Likes Data Quality Report for {user_id}:")
         print(f"  - Total clean records: {total_records}")
+        print(f"  - Duplicates removed: {duplicates_removed}")
         print(f"  - Null track_ids found: {null_tracks}")
+        print(f"  - Source files processed: {list(total_records_per_file.keys())}")
         if total_records > 0:
-            print(f"  - Date range (UTC): {df_final.agg(min('added_at_utc'), max('added_at_utc')).collect()[0]}")
-            print(f"  - Date range (Mexico): {df_final.agg(min('added_at_mexico'), max('added_at_mexico')).collect()[0]}")
+            date_range = df_final.agg(min('added_at_utc'), max('added_at_utc')).collect()[0]
+            print(f"  - Date range (UTC): {date_range}")
         
     except Exception as e:
         print(f"Error processing likes for user {user_id}: {str(e)}")
@@ -207,10 +257,15 @@ def creates_followed_data(user_id):
     """Creates followed artists data for a specific user"""
     print(f"Processing followed artists data for user: {user_id}")
 
-    # Check if user has JSON files
-    if not check_user_has_json_files(user_id):
-        print(f"No JSON files found for user {user_id}, skipping...")
+    # Check which specific files exist
+    files = check_specific_json_files(user_id)
+    followed_files = files['followed']
+    
+    if not followed_files:
+        print(f"No followed artists JSON files found for user {user_id}, skipping...")
         return
+    
+    print(f"Found followed artists files for user {user_id}: {followed_files}")
     
     # Input and output paths
     input_path = f"{RAW_BASE_PATH}{user_id}/"
@@ -218,33 +273,68 @@ def creates_followed_data(user_id):
     
     try:    
         schema_f = define_schema_followed()
-        df = spark.read \
-            .schema(schema_f) \
-            .json(f"{input_path}followed*.json")
         
-        if df.count() == 0:
-            print(f"No followed artists data found for user {user_id}")
-            return
+        # Process each followed file explicitly
+        all_dfs = []
+        total_records_per_file = {}
+        
+        for followed_file in followed_files:
+            file_path = f"{input_path}{followed_file}"
+            print(f"Reading file: {file_path}")
             
-        print(f"Raw followed artists records for user {user_id}: {df.count()}")
+            df_file = spark.read \
+                .option("multiline", "true") \
+                .schema(schema_f) \
+                .json(file_path)
+            
+            df_file = df_file.selectExpr("explode(artists_id) as artist_id")
+
+            file_count = df_file.count()
+            total_records_per_file[followed_file] = file_count
+            print(f"  - Records in {followed_file}: {file_count}")
+            
+            if file_count > 0:
+                df_file = df_file.withColumn("source_file", lit(followed_file))
+                all_dfs.append(df_file)
+        
+        if not all_dfs:
+            print(f"No valid followed artists data found for user {user_id}")
+            return
+        
+        # Combine all DataFrames
+        if len(all_dfs) == 1:
+            df = all_dfs[0]
+        else:
+            df = all_dfs[0]
+            for df_additional in all_dfs[1:]:
+                df = df.union(df_additional)
+        
+        print(f"Total combined followed artists records for user {user_id}: {df.count()}")
+        print(f"Records breakdown: {total_records_per_file}")
         
         # Handle null values and add metadata
         df_cleaned = df \
             .withColumn("user_id", lit(user_id)) \
-            .withColumn("artist_id", col("artists_id")) \
             .fillna({
                 "artist_id": "-1"
             }) \
             .withColumn("processed_at", current_timestamp())
+        
+        # Remove duplicates based on artist_id
+        df_deduplicated = df_cleaned.dropDuplicates(["artist_id"])
+        
+        duplicates_removed = df_cleaned.count() - df_deduplicated.count()
+        if duplicates_removed > 0:
+            print(f"Removed {duplicates_removed} duplicate followed artists")
         
         # Reorder columns for better organization
         final_columns = [
             "user_id", "artist_id", "processed_at"
         ]
         
-        df_final = df_cleaned.select(*final_columns)
+        df_final = df_deduplicated.select(*final_columns)
         
-        print(f"Clean followed artists records for user {user_id}: {df_final.count()}")
+        print(f"Final clean followed artists records for user {user_id}: {df_final.count()}")
         
         # Write to Parquet with compression
         df_final.coalesce(1) \
@@ -260,6 +350,8 @@ def creates_followed_data(user_id):
         
         print(f"Followed Artists Data Quality Report for {user_id}:")
         print(f"  - Total clean records: {total_records}")
+        print(f"  - Duplicates removed: {duplicates_removed}")
+        print(f"  - Source files processed: {list(total_records_per_file.keys())}")
         
     except Exception as e:
         print(f"Error processing followed artists for user {user_id}: {str(e)}")
@@ -269,10 +361,15 @@ def creates_top_tracks_data(user_id):
     """Creates top tracks data for a specific user"""
     print(f"Processing top tracks data for user: {user_id}")
 
-    # Check if user has JSON files
-    if not check_user_has_json_files(user_id):
-        print(f"No JSON files found for user {user_id}, skipping...")
+    # Check which specific files exist
+    files = check_specific_json_files(user_id)
+    top_tracks_files = files['top_tracks']
+    
+    if not top_tracks_files:
+        print(f"No top tracks JSON files found for user {user_id}, skipping...")
         return
+    
+    print(f"Found top tracks files for user {user_id}: {top_tracks_files}")
     
     # Input and output paths
     input_path = f"{RAW_BASE_PATH}{user_id}/"
@@ -280,15 +377,42 @@ def creates_top_tracks_data(user_id):
     
     try:    
         schema_t = define_schema_top_tracks()
-        df = spark.read \
-            .schema(schema_t) \
-            .json(f"{input_path}top_*.json")
         
-        if df.count() == 0:
-            print(f"No top tracks data found for user {user_id}")
-            return
+        # Process each top tracks file explicitly
+        all_dfs = []
+        total_records_per_file = {}
+        
+        for top_tracks_file in top_tracks_files:
+            file_path = f"{input_path}{top_tracks_file}"
+            print(f"Reading file: {file_path}")
             
-        print(f"Raw top tracks records for user {user_id}: {df.count()}")
+            df_file = spark.read \
+                .option("multiline", "true") \
+                .schema(schema_t) \
+                .json(file_path)
+            
+            file_count = df_file.count()
+            total_records_per_file[top_tracks_file] = file_count
+            print(f"  - Records in {top_tracks_file}: {file_count}")
+            
+            if file_count > 0:
+                df_file = df_file.withColumn("source_file", lit(top_tracks_file))
+                all_dfs.append(df_file)
+        
+        if not all_dfs:
+            print(f"No valid top tracks data found for user {user_id}")
+            return
+        
+        # Combine all DataFrames
+        if len(all_dfs) == 1:
+            df = all_dfs[0]
+        else:
+            df = all_dfs[0]
+            for df_additional in all_dfs[1:]:
+                df = df.union(df_additional)
+        
+        print(f"Total combined top tracks records for user {user_id}: {df.count()}")
+        print(f"Records breakdown: {total_records_per_file}")
         
         # Handle null values and clean text fields
         df_cleaned = df \
@@ -299,7 +423,7 @@ def creates_top_tracks_data(user_id):
                 "album_id": "-1",
                 "track_popularity": 0,
                 "explicit": False,
-                "duration": 0
+                "duration_ms": 0
             }) \
             .withColumn("processed_at", current_timestamp())
         
@@ -309,19 +433,26 @@ def creates_top_tracks_data(user_id):
             when(col("artists_id").isNull(), array(lit("-1"))).otherwise(col("artists_id"))
         )
         
+        # Remove duplicates based on track_id and ith_preference
+        df_deduplicated = df_cleaned.dropDuplicates(["track_id", "ith_preference"])
+        
+        duplicates_removed = df_cleaned.count() - df_deduplicated.count()
+        if duplicates_removed > 0:
+            print(f"Removed {duplicates_removed} duplicate top tracks")
+        
         # Reorder columns for better organization
         final_columns = [
             "user_id", "ith_preference", "track_id", "track_name", 
-            "artists_id", "album_id", "track_popularity", "explicit", "duration",
+            "artists_id", "album_id", "track_popularity", "explicit", "duration_ms",
             "processed_at"
         ]
         
-        df_final = df_cleaned.select(*final_columns)
+        df_final = df_deduplicated.select(*final_columns)
         
         # Order by ith_preference for better compression and queries
         df_final = df_final.orderBy("ith_preference")
         
-        print(f"Clean top tracks records for user {user_id}: {df_final.count()}")
+        print(f"Final clean top tracks records for user {user_id}: {df_final.count()}")
         
         # Write to Parquet with compression
         df_final.coalesce(1) \
@@ -338,7 +469,9 @@ def creates_top_tracks_data(user_id):
         
         print(f"Top Tracks Data Quality Report for {user_id}:")
         print(f"  - Total clean records: {total_records}")
+        print(f"  - Duplicates removed: {duplicates_removed}")
         print(f"  - Null track_ids found: {null_tracks}")
+        print(f"  - Source files processed: {list(total_records_per_file.keys())}")
         
     except Exception as e:
         print(f"Error processing top tracks for user {user_id}: {str(e)}")
@@ -368,6 +501,12 @@ def main():
             print(f"\n{'='*60}")
             print(f"Processing user: {user_id}")
             print(f"{'='*60}")
+            
+            # Check what files exist for this user first
+            files = check_specific_json_files(user_id)
+            print(f"Available files for user {user_id}:")
+            for file_type, file_list in files.items():
+                print(f"  - {file_type}: {file_list}")
             
             creates_likes_data(user_id)
             creates_followed_data(user_id)
