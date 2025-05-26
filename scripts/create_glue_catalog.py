@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Production script for creating AWS Glue Data Catalog database and table
+Production script for creating AWS Glue Data Catalog database and tables
 for Spotify analytics data stored in Parquet format on S3.
 
-This script should be executed once to set up the catalog structure.
+This script creates multiple tables with predefined S3 locations.
 It includes error handling and logging for production environments.
 
 Usage:
-    python3 create_glue_catalog.py [--database-name DATABASE] [--table-name TABLE] [--s3-location S3_PATH]
+    python3 create_glue_catalog.py [--database-name DATABASE] [--region REGION]
 """
 
 import boto3
@@ -52,6 +52,26 @@ class GlueCatalogManager:
         except Exception as e:
             logger.error(f"Failed to initialize Glue client: {str(e)}")
             raise
+        
+        # Define table configurations with their S3 locations
+        self.table_configs = {
+            'user_tracks': {
+                's3_location': 's3://itam-analytics-ragp/spotifire/processed/individual/',
+                'description': 'Unified table containing Spotify listening data for all users'
+            },
+            'top_tracks': {
+                's3_location': 's3://itam-analytics-ragp/spotifire/processed/top_tracks/',
+                'description': 'Unified table containing Spotify top tracks data for all users'
+            },
+            'likes': {
+                's3_location': 's3://itam-analytics-ragp/spotifire/processed/likes/',
+                'description': 'Unified table containing Spotify tracks liked data for all users'
+            },
+            'followed_artists': {
+                's3_location': 's3://itam-analytics-ragp/spotifire/processed/followed_artists/',
+                'description': 'Unified table containing Spotify followed artist data for all users'
+            }
+        }
     
     def create_database(self, database_name, description=None):
         """
@@ -104,7 +124,7 @@ class GlueCatalogManager:
             logger.error(f"Unexpected error creating database: {str(e)}")
             return False
     
-    def get_table_schema(self):
+    def get_table_schema(self, table_type):
         """
         Define the schema for the Spotify analytics table.
         
@@ -112,108 +132,244 @@ class GlueCatalogManager:
         which processes CSV files and creates Parquet files with additional
         derived fields like play_hour, season, etc.
         
+        Args:
+            table_type (str): Type of table ('user_tracks', 'top_tracks', 'likes', 'followed_artists')
+        
         Returns:
             list: List of column definitions for the table
         """
-        return [
-            {
-                'Name': 'user_id', 
-                'Type': 'string', 
-                'Comment': 'Unique identifier for the Spotify user'
-            },
-            {
-                'Name': 'played_at_utc', 
-                'Type': 'timestamp', 
-                'Comment': 'When the track was played in UTC timezone'
-            },
-            {
-                'Name': 'played_at_mexico', 
-                'Type': 'timestamp', 
-                'Comment': 'When the track was played in Mexico timezone for behavioral analysis'
-            },
-            {
-                'Name': 'track_id', 
-                'Type': 'string', 
-                'Comment': 'Spotify unique identifier for the track'
-            },
-            {
-                'Name': 'track_name', 
-                'Type': 'string', 
-                'Comment': 'Name of the music track'
-            },
-            {
-                'Name': 'artist_id', 
-                'Type': 'string', 
-                'Comment': 'Spotify unique identifier for the artist'
-            },
-            {
-                'Name': 'artist_name', 
-                'Type': 'string', 
-                'Comment': 'Name of the artist'
-            },
-            {
-                'Name': 'album_id', 
-                'Type': 'string', 
-                'Comment': 'Spotify unique identifier for the album'
-            },
-            {
-                'Name': 'album_name', 
-                'Type': 'string', 
-                'Comment': 'Name of the album'
-            },
-            {
-                'Name': 'duration_ms', 
-                'Type': 'bigint', 
-                'Comment': 'Track duration in milliseconds'
-            },
-            {
-                'Name': 'duration_minutes', 
-                'Type': 'double', 
-                'Comment': 'Track duration in minutes (derived field)'
-            },
-            {
-                'Name': 'popularity', 
-                'Type': 'int', 
-                'Comment': 'Spotify popularity score from 0 to 100'
-            },
-            {
-                'Name': 'explicit', 
-                'Type': 'boolean', 
-                'Comment': 'Whether the track contains explicit content'
-            },
-            {
-                'Name': 'play_hour', 
-                'Type': 'int', 
-                'Comment': 'Hour of day when played (0-23) in Mexico timezone'
-            },
-            {
-                'Name': 'play_day_of_week', 
-                'Type': 'int', 
-                'Comment': 'Day of week when played (1=Sunday, 7=Saturday)'
-            },
-            {
-                'Name': 'play_month', 
-                'Type': 'int', 
-                'Comment': 'Month when played (1-12)'
-            },
-            {
-                'Name': 'play_year', 
-                'Type': 'int', 
-                'Comment': 'Year when played'
-            },
-            {
-                'Name': 'season', 
-                'Type': 'string', 
-                'Comment': 'Season when played (Spring, Summer, Fall, Winter)'
-            },
-            {
-                'Name': 'processed_at', 
-                'Type': 'timestamp', 
-                'Comment': 'When this record was processed by the ETL pipeline'
-            }
-        ]
+
+        if table_type == "user_tracks":
+            return [
+                {
+                    'Name': 'user_id', 
+                    'Type': 'string', 
+                    'Comment': 'Unique identifier for the Spotify user'
+                },
+                {
+                    'Name': 'played_at_utc', 
+                    'Type': 'timestamp', 
+                    'Comment': 'When the track was played in UTC timezone'
+                },
+                {
+                    'Name': 'played_at_mexico', 
+                    'Type': 'timestamp', 
+                    'Comment': 'When the track was played in Mexico timezone for behavioral analysis'
+                },
+                {
+                    'Name': 'track_id', 
+                    'Type': 'string', 
+                    'Comment': 'Spotify unique identifier for the track'
+                },
+                {
+                    'Name': 'track_name', 
+                    'Type': 'string', 
+                    'Comment': 'Name of the music track'
+                },
+                {
+                    'Name': 'artist_id', 
+                    'Type': 'string', 
+                    'Comment': 'Spotify unique identifier for the artist'
+                },
+                {
+                    'Name': 'artist_name', 
+                    'Type': 'string', 
+                    'Comment': 'Name of the artist'
+                },
+                {
+                    'Name': 'album_id', 
+                    'Type': 'string', 
+                    'Comment': 'Spotify unique identifier for the album'
+                },
+                {
+                    'Name': 'album_name', 
+                    'Type': 'string', 
+                    'Comment': 'Name of the album'
+                },
+                {
+                    'Name': 'duration_ms', 
+                    'Type': 'bigint', 
+                    'Comment': 'Track duration in milliseconds'
+                },
+                {
+                    'Name': 'duration_minutes', 
+                    'Type': 'double', 
+                    'Comment': 'Track duration in minutes (derived field)'
+                },
+                {
+                    'Name': 'popularity', 
+                    'Type': 'int', 
+                    'Comment': 'Spotify popularity score from 0 to 100'
+                },
+                {
+                    'Name': 'explicit', 
+                    'Type': 'boolean', 
+                    'Comment': 'Whether the track contains explicit content'
+                },
+                {
+                    'Name': 'play_hour', 
+                    'Type': 'int', 
+                    'Comment': 'Hour of day when played (0-23) in Mexico timezone'
+                },
+                {
+                    'Name': 'play_day_of_week', 
+                    'Type': 'int', 
+                    'Comment': 'Day of week when played (1=Sunday, 7=Saturday)'
+                },
+                {
+                    'Name': 'play_month', 
+                    'Type': 'int', 
+                    'Comment': 'Month when played (1-12)'
+                },
+                {
+                    'Name': 'play_year', 
+                    'Type': 'int', 
+                    'Comment': 'Year when played'
+                },
+                {
+                    'Name': 'season', 
+                    'Type': 'string', 
+                    'Comment': 'Season when played (Spring, Summer, Fall, Winter)'
+                },
+                {
+                    'Name': 'processed_at', 
+                    'Type': 'timestamp', 
+                    'Comment': 'When this record was processed by the ETL pipeline'
+                }
+            ]
+        elif table_type == "top_tracks":
+            return [
+                {
+                    'Name': 'user_id', 
+                    'Type': 'string', 
+                    'Comment': 'Unique identifier for the Spotify user'
+                },
+                {
+                    'Name': 'ith_preference', 
+                    'Type': 'int', 
+                    'Comment': 'Order of track in preferences'
+                },
+                {
+                    'Name': 'track_id', 
+                    'Type': 'string', 
+                    'Comment': 'Unique identifier for the Spotify track'
+                },
+                {
+                    'Name': 'track_name', 
+                    'Type': 'string', 
+                    'Comment': 'Name of the Spotify track'
+                },
+                {
+                    'Name': 'artists_id', 
+                    'Type': 'array<string>', 
+                    'Comment': 'Uniques identifiers for the Spotify artists'
+                },
+                {
+                    'Name': 'album_id', 
+                    'Type': 'string', 
+                    'Comment': 'Unique identifier for the Spotify album'
+                },
+                {
+                    'Name': 'track_popularity', 
+                    'Type': 'int', 
+                    'Comment': 'Track`s percentage popularity'
+                },
+                {
+                    'Name': 'explicit', 
+                    'Type': 'boolean', 
+                    'Comment': 'Flag to indicate explicity'
+                },
+                {
+                    'Name': 'duration', 
+                    'Type': 'int', 
+                    'Comment': 'Track`s duration (milliseconds)'
+                },
+                {
+                    'Name': 'processed_at', 
+                    'Type': 'timestamp', 
+                    'Comment': 'Timestamp of processing'
+                }
+            ]
+        elif table_type == "likes":
+            return [
+                {
+                    'Name': 'user_id', 
+                    'Type': 'string', 
+                    'Comment': 'Unique identifier for the Spotify user'
+                },
+                {
+                    'Name': 'added_at_utc', 
+                    'Type': 'timestamp', 
+                    'Comment': 'UTC timestamp of adding'
+                },
+                {
+                    'Name': 'added_at_mexico', 
+                    'Type': 'timestamp', 
+                    'Comment': 'UTC-6 timestamp of adding'
+                },
+                {
+                    'Name': 'track_id', 
+                    'Type': 'string', 
+                    'Comment': 'Uniques identifiers for the Spotify track'
+                },
+                {
+                    'Name': 'track_name', 
+                    'Type': 'string', 
+                    'Comment': 'Name of the Spotify track'
+                },
+                {
+                    'Name': 'artists_id', 
+                    'Type': 'array<string>', 
+                    'Comment': 'Uniques identifiers for the Spotify artists'
+                },
+                {
+                    'Name': 'album_id', 
+                    'Type': 'string', 
+                    'Comment': 'Unique identifier for the Spotify album'
+                },
+                {
+                    'Name': 'track_popularity', 
+                    'Type': 'int', 
+                    'Comment': 'Track`s percentage popularity'
+                },
+                {
+                    'Name': 'explicit', 
+                    'Type': 'boolean', 
+                    'Comment': 'Flag to indicate explicity'
+                },
+                {
+                    'Name': 'duration', 
+                    'Type': 'int', 
+                    'Comment': 'Track`s duration (milliseconds)'
+                },
+                {
+                    'Name': 'processed_at', 
+                    'Type': 'timestamp', 
+                    'Comment': 'Timestamp of processing'
+                }
+            ]
+        elif table_type == "followed_artists":
+            return [
+                {
+                    'Name': 'user_id', 
+                    'Type': 'string', 
+                    'Comment': 'Unique identifier for the Spotify user'
+                },
+                {
+                    'Name': 'artist_id', 
+                    'Type': 'string', 
+                    'Comment': 'Uniques identifiers for the Spotify artist'
+                },
+                {
+                    'Name': 'processed_at', 
+                    'Type': 'timestamp', 
+                    'Comment': 'Timestamp of processing'
+                }
+            ]
+        else:
+            raise ValueError(f"Unknown table type: {table_type}")
     
-    def create_table(self, database_name, table_name, s3_location):
+    def create_table(self, database_name, table_name):
         """
         Create a table in AWS Glue Data Catalog that points to Parquet files in S3.
         
@@ -223,17 +379,24 @@ class GlueCatalogManager:
         
         Args:
             database_name (str): Name of the database to contain the table
-            table_name (str): Name of the table to create
-            s3_location (str): S3 path where Parquet files are stored
+            table_name (str): Name of the table to create. One of: ['user_tracks', 'top_tracks', 'likes', 'followed_artists']
             
         Returns:
             bool: True if successful, False otherwise
         """
+        if table_name not in self.table_configs:
+            logger.error(f"Unknown table name: {table_name}")
+            return False
+        
+        table_config = self.table_configs[table_name]
+        s3_location = table_config['s3_location']
+        description = table_config['description']
+        
         logger.info(f"Creating table: {database_name}.{table_name}")
         logger.info(f"S3 location: {s3_location}")
         
         # Get the schema definition
-        table_schema = self.get_table_schema()
+        table_schema = self.get_table_schema(table_name)
         
         try:
             # Create the table with full configuration for Parquet files
@@ -241,7 +404,7 @@ class GlueCatalogManager:
                 DatabaseName=database_name,
                 TableInput={
                     'Name': table_name,
-                    'Description': 'Unified table containing Spotify listening data for all users',
+                    'Description': description,
                     'TableType': 'EXTERNAL_TABLE',
                     'Parameters': {
                         'EXTERNAL': 'TRUE',
@@ -280,7 +443,7 @@ class GlueCatalogManager:
             
             # For production, we should handle existing tables carefully
             # We'll update the table with the current schema
-            return self.update_existing_table(database_name, table_name, s3_location)
+            return self.update_existing_table(database_name, table_name)
             
         except ClientError as e:
             error_code = e.response['Error']['Code']
@@ -292,7 +455,7 @@ class GlueCatalogManager:
             logger.error(f"Unexpected error creating table: {str(e)}")
             return False
     
-    def update_existing_table(self, database_name, table_name, s3_location):
+    def update_existing_table(self, database_name, table_name):
         """
         Update an existing table with the current schema definition.
         
@@ -302,21 +465,28 @@ class GlueCatalogManager:
         Args:
             database_name (str): Name of the database containing the table
             table_name (str): Name of the table to update
-            s3_location (str): S3 path where Parquet files are stored
             
         Returns:
             bool: True if successful, False otherwise
         """
         logger.info(f"Updating existing table: {database_name}.{table_name}")
         
-        table_schema = self.get_table_schema()
+        if table_name not in self.table_configs:
+            logger.error(f"Unknown table name: {table_name}")
+            return False
+        
+        table_config = self.table_configs[table_name]
+        s3_location = table_config['s3_location']
+        description = table_config['description'] + " (UPDATED)"
+        
+        table_schema = self.get_table_schema(table_name)
         
         try:
             self.glue_client.update_table(
                 DatabaseName=database_name,
                 TableInput={
                     'Name': table_name,
-                    'Description': 'Unified table containing Spotify listening data for all users (UPDATED)',
+                    'Description': description,
                     'TableType': 'EXTERNAL_TABLE',
                     'Parameters': {
                         'EXTERNAL': 'TRUE',
@@ -368,12 +538,11 @@ class GlueCatalogManager:
         Returns:
             bool: True if verification passes, False otherwise
         """
-        logger.info("Verifying database and table creation...")
+        logger.info(f"Verifying table: {database_name}.{table_name}")
         
         try:
             # Verify database exists
             db_response = self.glue_client.get_database(Name=database_name)
-            logger.info(f"Database verified: {db_response['Database']['Name']}")
             
             # Verify table exists and get its details
             table_response = self.glue_client.get_table(
@@ -389,11 +558,44 @@ class GlueCatalogManager:
             return True
             
         except ClientError as e:
-            logger.error(f"Verification failed: {e.response['Error']['Message']}")
+            logger.error(f"Verification failed for {table_name}: {e.response['Error']['Message']}")
             return False
         except Exception as e:
-            logger.error(f"Verification error: {str(e)}")
+            logger.error(f"Verification error for {table_name}: {str(e)}")
             return False
+    
+    def create_all_tables(self, database_name):
+        """
+        Create all tables defined in table_configs.
+        
+        Args:
+            database_name (str): Name of the database to contain the tables
+            
+        Returns:
+            dict: Results for each table creation
+        """
+        results = {}
+        
+        for table_name in self.table_configs.keys():
+            logger.info(f"Processing table: {table_name}")
+            
+            # Create table
+            table_success = self.create_table(database_name, table_name)
+            
+            # Verify table
+            verification_success = False
+            if table_success:
+                verification_success = self.verify_setup(database_name, table_name)
+            
+            results[table_name] = {
+                'created': table_success,
+                'verified': verification_success,
+                's3_location': self.table_configs[table_name]['s3_location']
+            }
+            
+            logger.info(f"Table {table_name}: Created={table_success}, Verified={verification_success}")
+        
+        return results
 
 def main():
     """
@@ -403,22 +605,12 @@ def main():
     Data Catalog for Spotify analytics data.
     """
     parser = argparse.ArgumentParser(
-        description='Create AWS Glue Data Catalog database and table for Spotify analytics'
+        description='Create AWS Glue Data Catalog database and tables for Spotify analytics'
     )
     parser.add_argument(
         '--database-name', 
         default='spotify_analytics',
         help='Name of the Glue database to create (default: spotify_analytics)'
-    )
-    parser.add_argument(
-        '--table-name',
-        default='user_tracks',
-        help='Name of the Glue table to create (default: user_tracks)'
-    )
-    parser.add_argument(
-        '--s3-location',
-        default='s3://itam-analytics-ragp/spotifire/processed/individual/',
-        help='S3 location where Parquet files are stored'
     )
     parser.add_argument(
         '--region',
@@ -430,13 +622,15 @@ def main():
     
     logger.info("Starting AWS Glue Data Catalog setup for Spotify analytics")
     logger.info(f"Database: {args.database_name}")
-    logger.info(f"Table: {args.table_name}")
-    logger.info(f"S3 Location: {args.s3_location}")
     logger.info(f"Region: {args.region}")
     
     try:
         # Initialize the catalog manager
         catalog_manager = GlueCatalogManager(region_name=args.region)
+        
+        logger.info(f"Tables to be created: {list(catalog_manager.table_configs.keys())}")
+        for table_name, config in catalog_manager.table_configs.items():
+            logger.info(f"  - {table_name}: {config['s3_location']}")
         
         # Create database
         database_success = catalog_manager.create_database(
@@ -448,33 +642,55 @@ def main():
             logger.error("Failed to create database. Exiting.")
             sys.exit(1)
         
-        # Create table
-        table_success = catalog_manager.create_table(
-            database_name=args.database_name,
-            table_name=args.table_name,
-            s3_location=args.s3_location
-        )
+        # Create all tables
+        table_results = catalog_manager.create_all_tables(args.database_name)
         
-        if not table_success:
-            logger.error("Failed to create table. Exiting.")
-            sys.exit(1)
+        # Summary
+        successful_tables = [name for name, result in table_results.items() if result['created'] and result['verified']]
+        failed_tables = [name for name, result in table_results.items() if not (result['created'] and result['verified'])]
         
-        # Verify setup
-        verification_success = catalog_manager.verify_setup(
-            database_name=args.database_name,
-            table_name=args.table_name
-        )
+        logger.info("="*60)
+        logger.info("SETUP SUMMARY")
+        logger.info("="*60)
+        logger.info(f"Database: {args.database_name}")
+        logger.info(f"Total tables processed: {len(table_results)}")
+        logger.info(f"Successful tables: {len(successful_tables)}")
+        logger.info(f"Failed tables: {len(failed_tables)}")
         
-        if verification_success:
-            logger.info("AWS Glue Data Catalog setup completed successfully")
-            logger.info(f"You can now query the data using AWS Athena:")
+        if successful_tables:
+            logger.info("\n✅ Successfully created tables:")
+            for table_name in successful_tables:
+                s3_location = table_results[table_name]['s3_location']
+                logger.info(f"  - {table_name}: {s3_location}")
+        
+        if failed_tables:
+            logger.error("\n❌ Failed tables:")
+            for table_name in failed_tables:
+                logger.error(f"  - {table_name}")
+        
+        if successful_tables:
+            logger.info(f"\n🎉 You can now query the data using AWS Athena:")
+            logger.info(f"Example queries:")
+            logger.info(f"  -- User listening history")
             logger.info(f"  SELECT user_id, COUNT(*) as total_plays")
-            logger.info(f"  FROM {args.database_name}.{args.table_name}")
-            logger.info(f"  GROUP BY user_id")
-            logger.info(f"  ORDER BY total_plays DESC;")
-        else:
-            logger.error("Setup verification failed")
+            logger.info(f"  FROM {args.database_name}.user_tracks")
+            logger.info(f"  GROUP BY user_id ORDER BY total_plays DESC;")
+            logger.info(f"")
+            logger.info(f"  -- Top tracks analysis")
+            logger.info(f"  SELECT user_id, track_name, ith_preference")
+            logger.info(f"  FROM {args.database_name}.top_tracks")
+            logger.info(f"  WHERE ith_preference <= 5;")
+            logger.info(f"")
+            logger.info(f"  -- Liked tracks by user")
+            logger.info(f"  SELECT user_id, COUNT(*) as liked_tracks")
+            logger.info(f"  FROM {args.database_name}.likes")
+            logger.info(f"  GROUP BY user_id;")
+        
+        # Exit with appropriate code
+        if failed_tables:
             sys.exit(1)
+        else:
+            logger.info("✅ All tables created successfully!")
             
     except KeyboardInterrupt:
         logger.info("Setup interrupted by user")

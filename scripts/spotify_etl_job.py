@@ -61,17 +61,35 @@ def check_user_has_csv_files(user_id):
     """Check if user directory contains CSV files"""
     s3_client = boto3.client('s3')
     
-    response = s3_client.list_objects_v2(
-        Bucket=INPUT_BUCKET,
-        Prefix=f'spotifire/raw/{user_id}/',
-        MaxKeys=1
-    )
-    
-    # Check if any objects exist and at least one is a CSV
-    for obj in response.get('Contents', []):
-        if obj['Key'].endswith('.csv'):
-            return True
-    return False
+    try:
+        # Buscar archivos CSV específicos primero
+        response = s3_client.list_objects_v2(
+            Bucket=INPUT_BUCKET,
+            Prefix=f'spotifire/raw/{user_id}/recently_played_',
+            MaxKeys=1
+        )
+        
+        if response.get('Contents'):
+            for obj in response['Contents']:
+                if obj['Key'].endswith('.csv'):
+                    return True
+        
+        # Fallback: buscar cualquier CSV en el directorio
+        response = s3_client.list_objects_v2(
+            Bucket=INPUT_BUCKET,
+            Prefix=f'spotifire/raw/{user_id}/',
+            MaxKeys=20
+        )
+        
+        for obj in response.get('Contents', []):
+            if obj['Key'].endswith('.csv'):
+                return True
+                
+        return False
+        
+    except Exception as e:
+        print(f"Error checking CSV files for user {user_id}: {e}")
+        return False
 
 def define_schema():
     """Define the schema for the CSV files"""

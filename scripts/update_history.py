@@ -6,6 +6,7 @@ para múltiples usuarios y guardarlos en archivos JSON con timestamp.
 
 Uso:
     # Para procesar todos los usuarios en un directorio:
+    # Para procesar todos los usuarios en un directorio:
     python history_periodic_collector.py --users_dir DIRECTORIO_DE_USUARIOS --output_base_dir DIRECTORIO_BASE_SALIDA
 
     # Para procesar un usuario específico:
@@ -13,7 +14,15 @@ Uso:
 
 Ejemplos:
     # Procesar todos los usuarios
+    # Para procesar un usuario específico:
+    python history_periodic_collector.py --single_user_file ARCHIVO_JSON_USUARIO --output_base_dir DIRECTORIO_BASE_SALIDA
+
+Ejemplos:
+    # Procesar todos los usuarios
     python history_periodic_collector.py --users_dir /path/to/users_data --output_base_dir /home/ec2-user/spotifire_new_directories/data/users_data
+
+    # Procesar solo un usuario específico
+    python history_periodic_collector.py --single_user_file /path/to/users_data/user123.json --output_base_dir /home/ec2-user/spotifire_new_directories/data/users_data
 
     # Procesar solo un usuario específico
     python history_periodic_collector.py --single_user_file /path/to/users_data/user123.json --output_base_dir /home/ec2-user/spotifire_new_directories/data/users_data
