@@ -127,6 +127,21 @@
     margin: 10px 0;
 }
 
+.no-data-state {
+    text-align: center;
+    padding: 30px 20px;
+    color: #b3b3b3;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    margin: 10px 0;
+}
+
+.no-data-icon {
+    font-size: 48px;
+    color: #333;
+    margin-bottom: 15px;
+}
+
 .profile-badge {
     display: inline-block;
     background: linear-gradient(45deg, #1DB954, #1ed760);
@@ -177,8 +192,6 @@
     margin-top: 10px;
     font-style: italic;
 }
-
-
 
 /* Responsive design */
 @media (max-width: 768px) {
@@ -264,7 +277,11 @@
             <div>
                 <h3 class="welcome-message">¡Hola, {{ user_name }}!</h3>
                 <p class="mb-0" style="color: rgba(255,255,255,0.8);">
-                    Tu estado musical de esta semana
+                    {% if insights_available and advanced_insights.top_artists %}
+                        Tu estado musical de esta semana
+                    {% else %}
+                        ¡Bienvenido a tu nuevo dashboard musical!
+                    {% endif %}
                 </p>
             </div>
             <button class="btn btn-dark" onclick="refreshAllInsights()">
@@ -272,7 +289,7 @@
             </button>
         </div>
 
-        {% if insights_available %}
+        {% if insights_available and advanced_insights %}
         
         <!-- Insights Principales -->
         <div class="row">
@@ -286,7 +303,7 @@
                     </div>
                     
                     <div id="top-artists-content">
-                        {% if advanced_insights.top_artists %}
+                        {% if advanced_insights.top_artists and advanced_insights.top_artists|length > 0 %}
                             <div class="chart-container medium">
                                 <canvas id="topArtistsChart"></canvas>
                             </div>
@@ -297,25 +314,24 @@
                                     <div class="metric-label">Artistas Top</div>
                                 </div>
                                 <div class="metric-item">
-                                    <span class="metric-value">{{ advanced_insights.top_artists[0].play_count if advanced_insights.top_artists else 0 }}</span>
+                                    <span class="metric-value">{{ advanced_insights.top_artists[0].play_count }}</span>
                                     <div class="metric-label">Más Escuchado</div>
                                 </div>
                                 <div class="metric-item">
-                                    <span class="metric-value">{{ (advanced_insights.top_artists | sum(attribute='play_count')) if advanced_insights.top_artists else 0 }}</span>
+                                    <span class="metric-value">{{ (advanced_insights.top_artists | sum(attribute='play_count')) }}</span>
                                     <div class="metric-label">Total Reproducciones</div>
                                 </div>
                             </div>
                             
-                            {% if advanced_insights.top_artists %}
                             <div class="insight-description">
                                 Tu artista más escuchado es <strong>{{ advanced_insights.top_artists[0].artist_name }}</strong> 
                                 con {{ advanced_insights.top_artists[0].play_count }} reproducciones.
                             </div>
-                            {% endif %}
                         {% else %}
-                            <div class="loading-placeholder">
-                                <div class="loading-spinner"></div>
-                                Cargando tus artistas favoritos...
+                            <div class="no-data-state">
+                                <div class="no-data-icon">🎵</div>
+                                <h5>¡Empieza a escuchar música!</h5>
+                                <p>Una vez que tengas más reproducciones, aquí verás tus artistas favoritos.</p>
                             </div>
                         {% endif %}
                     </div>
@@ -332,7 +348,7 @@
                     </div>
                     
                     <div id="daily-pattern-content">
-                        {% if advanced_insights.daily_pattern %}
+                        {% if advanced_insights.daily_pattern and (advanced_insights.daily_pattern | sum(attribute='play_count')) > 0 %}
                             <div class="chart-container medium">
                                 <canvas id="dailyPatternChart"></canvas>
                             </div>
@@ -342,7 +358,7 @@
                             
                             <div class="metric-summary">
                                 <div class="metric-item">
-                                    <span class="metric-value">{{ peak_hour.hour_label if peak_hour else "--" }}</span>
+                                    <span class="metric-value">{{ peak_hour.hour_label if peak_hour and peak_hour.play_count > 0 else "--" }}</span>
                                     <div class="metric-label">Hora Pico</div>
                                 </div>
                                 <div class="metric-item">
@@ -355,13 +371,16 @@
                                 </div>
                             </div>
                             
+                            {% if peak_hour and peak_hour.play_count > 0 %}
                             <div class="insight-description">
-                                Tu momento más musical del día es a las <strong>{{ peak_hour.hour_label if peak_hour else "no disponible" }}</strong>.
+                                Tu momento más musical del día es a las <strong>{{ peak_hour.hour_label }}</strong>.
                             </div>
+                            {% endif %}
                         {% else %}
-                            <div class="loading-placeholder">
-                                <div class="loading-spinner"></div>
-                                Analizando tu ritmo diario...
+                            <div class="no-data-state">
+                                <div class="no-data-icon">⏰</div>
+                                <h5>Descubre tu horario musical</h5>
+                                <p>Con más reproducciones podremos identificar tus horarios favoritos para escuchar música.</p>
                             </div>
                         {% endif %}
                     </div>
@@ -380,66 +399,72 @@
                     </div>
                     
                     <div id="weekly-pattern-content">
-                        {% if advanced_insights.weekly_pattern %}
+                        {% if advanced_insights.weekly_pattern and advanced_insights.weekly_pattern.weekday and advanced_insights.weekly_pattern.weekend %}
                             {% set weekday_data = advanced_insights.weekly_pattern.weekday %}
                             {% set weekend_data = advanced_insights.weekly_pattern.weekend %}
+                            {% set total_pattern_plays = weekday_data.play_count + weekend_data.play_count %}
                             
-                            <div class="comparison-bars">
-                                <div class="bar-container">
-                                    <div class="bar-label">Días Laborales</div>
-                                    <div class="progress-bar">
-                                        <div class="progress-fill" style="width: {{ weekday_data.percentage if weekday_data else 0 }}%"></div>
+                            {% if total_pattern_plays > 0 %}
+                                <div class="comparison-bars">
+                                    <div class="bar-container">
+                                        <div class="bar-label">Días Laborales</div>
+                                        <div class="progress-bar">
+                                            <div class="progress-fill" style="width: {{ weekday_data.percentage|default(0) }}%"></div>
+                                        </div>
+                                        <div style="text-align: center; margin-top: 5px; color: #1DB954; font-weight: bold;">
+                                            {{ weekday_data.percentage|default(0) }}%
+                                        </div>
                                     </div>
-                                    <div style="text-align: center; margin-top: 5px; color: #1DB954; font-weight: bold;">
-                                        {{ weekday_data.percentage if weekday_data else 0 }}%
+                                    
+                                    <div class="bar-container">
+                                        <div class="bar-label">Fin de Semana</div>
+                                        <div class="progress-bar">
+                                            <div class="progress-fill" style="width: {{ weekend_data.percentage|default(0) }}%"></div>
+                                        </div>
+                                        <div style="text-align: center; margin-top: 5px; color: #1DB954; font-weight: bold;">
+                                            {{ weekend_data.percentage|default(0) }}%
+                                        </div>
                                     </div>
                                 </div>
                                 
-                                <div class="bar-container">
-                                    <div class="bar-label">Fin de Semana</div>
-                                    <div class="progress-bar">
-                                        <div class="progress-fill" style="width: {{ weekend_data.percentage if weekend_data else 0 }}%"></div>
+                                <div class="metric-summary">
+                                    <div class="metric-item">
+                                        <span class="metric-value">{{ weekday_data.play_count|default(0) }}</span>
+                                        <div class="metric-label">Reproducciones L-V</div>
                                     </div>
-                                    <div style="text-align: center; margin-top: 5px; color: #1DB954; font-weight: bold;">
-                                        {{ weekend_data.percentage if weekend_data else 0 }}%
+                                    <div class="metric-item">
+                                        <span class="metric-value">{{ weekend_data.play_count|default(0) }}</span>
+                                        <div class="metric-label">Reproducciones S-D</div>
+                                    </div>
+                                    <div class="metric-item">
+                                        <span class="metric-value">
+                                            {{ "%.1f"|format((weekday_data.avg_popularity|default(0) + weekend_data.avg_popularity|default(0)) / 2) }}
+                                        </span>
+                                        <div class="metric-label">Popularidad Promedio</div>
                                     </div>
                                 </div>
-                            </div>
-                            
-                            <div class="metric-summary">
-                                <div class="metric-item">
-                                    <span class="metric-value">{{ weekday_data.play_count if weekday_data else 0 }}</span>
-                                    <div class="metric-label">Reproducciones L-V</div>
-                                </div>
-                                <div class="metric-item">
-                                    <span class="metric-value">{{ weekend_data.play_count if weekend_data else 0 }}</span>
-                                    <div class="metric-label">Reproducciones S-D</div>
-                                </div>
-                                <div class="metric-item">
-                                    <span class="metric-value">
-                                        {% if weekday_data and weekend_data %}
-                                            {{ "%.1f"|format((weekday_data.avg_popularity + weekend_data.avg_popularity) / 2) }}
-                                        {% else %}
-                                            --
-                                        {% endif %}
-                                    </span>
-                                    <div class="metric-label">Popularidad Promedio</div>
-                                </div>
-                            </div>
-                            
-                            <div class="insight-description">
-                                {% if weekday_data and weekend_data %}
-                                    {% if weekday_data.percentage > weekend_data.percentage %}
-                                        Escuchas más música durante la <strong>semana laboral</strong> ({{ weekday_data.percentage }}%).
+                                
+                                <div class="insight-description">
+                                    {% if weekday_data.percentage|default(0) > weekend_data.percentage|default(0) %}
+                                        Escuchas más música durante la <strong>semana laboral</strong> ({{ weekday_data.percentage|default(0) }}%).
+                                    {% elif weekend_data.percentage|default(0) > weekday_data.percentage|default(0) %}
+                                        Prefieres disfrutar tu música en el <strong>fin de semana</strong> ({{ weekend_data.percentage|default(0) }}%).
                                     {% else %}
-                                        Prefieres disfrutar tu música en el <strong>fin de semana</strong> ({{ weekend_data.percentage }}%).
+                                        Tienes un patrón equilibrado entre semana y fin de semana.
                                     {% endif %}
-                                {% endif %}
-                            </div>
+                                </div>
+                            {% else %}
+                                <div class="no-data-state">
+                                    <div class="no-data-icon">📅</div>
+                                    <h5>Patrones por descubrir</h5>
+                                    <p>Con más reproducciones podremos analizar si prefieres escuchar música en días laborales o fines de semana.</p>
+                                </div>
+                            {% endif %}
                         {% else %}
-                            <div class="loading-placeholder">
-                                <div class="loading-spinner"></div>
-                                Comparando patrones semanales...
+                            <div class="no-data-state">
+                                <div class="no-data-icon">📅</div>
+                                <h5>Patrones por descubrir</h5>
+                                <p>Con más reproducciones podremos analizar si prefieres escuchar música en días laborales o fines de semana.</p>
                             </div>
                         {% endif %}
                     </div>
@@ -456,7 +481,7 @@
                     </div>
                     
                     <div id="popularity-content">
-                        {% if advanced_insights.popularity_distribution %}
+                        {% if advanced_insights.popularity_distribution and advanced_insights.popularity_distribution.summary and advanced_insights.popularity_distribution.summary.total_plays > 0 %}
                             <div class="chart-container small">
                                 <canvas id="popularityChart"></canvas>
                             </div>
@@ -465,20 +490,20 @@
                             
                             <div class="metric-summary">
                                 <div class="metric-item">
-                                    <span class="metric-value">{{ pop_data.emergent.percentage if pop_data.emergent else 0 }}%</span>
+                                    <span class="metric-value">{{ pop_data.emergent.percentage|default(0) }}%</span>
                                     <div class="metric-label">Emergentes</div>
                                 </div>
                                 <div class="metric-item">
-                                    <span class="metric-value">{{ pop_data.growing.percentage if pop_data.growing else 0 }}%</span>
+                                    <span class="metric-value">{{ pop_data.growing.percentage|default(0) }}%</span>
                                     <div class="metric-label">En Crecimiento</div>
                                 </div>
                                 <div class="metric-item">
-                                    <span class="metric-value">{{ pop_data.established.percentage if pop_data.established else 0 }}%</span>
+                                    <span class="metric-value">{{ pop_data.established.percentage|default(0) }}%</span>
                                     <div class="metric-label">Establecidos</div>
                                 </div>
                             </div>
                             
-                            {% if pop_data.summary %}
+                            {% if pop_data.summary and pop_data.summary.dominant_tier %}
                                 {% set dominant_tier = pop_data.summary.dominant_tier %}
                                 {% if dominant_tier == 'emergent' %}
                                     <div class="profile-badge">🔍 Descubridor Underground</div>
@@ -490,17 +515,23 @@
                                     <div class="insight-description">
                                         Tienes un <strong>gusto musical equilibrado</strong>, mezclando artistas emergentes con establecidos.
                                     </div>
-                                {% else %}
+                                {% elif dominant_tier == 'established' %}
                                     <div class="profile-badge">⭐ Amante del Mainstream</div>
                                     <div class="insight-description">
                                         Disfrutas de la <strong>música popular</strong> y los éxitos que conectan con las masas.
                                     </div>
+                                {% else %}
+                                    <div class="profile-badge">🎵 Explorador Musical</div>
+                                    <div class="insight-description">
+                                        Tu perfil musical está por definirse. ¡Sigue escuchando música!
+                                    </div>
                                 {% endif %}
                             {% endif %}
                         {% else %}
-                            <div class="loading-placeholder">
-                                <div class="loading-spinner"></div>
-                                Analizando tu perfil musical...
+                            <div class="no-data-state">
+                                <div class="no-data-icon">🎯</div>
+                                <h5>Definiendo tu perfil</h5>
+                                <p>Con más reproducciones podremos identificar si prefieres artistas emergentes o establecidos.</p>
                             </div>
                         {% endif %}
                     </div>
@@ -514,11 +545,12 @@
         <div class="row">
             <div class="col-12">
                 <div class="insight-card">
-                    <div class="error-state">
-                        <i class="bi bi-info-circle" style="font-size: 24px; margin-bottom: 10px;"></i>
-                        <h5>Insights Avanzados No Disponibles</h5>
-                        <p>Los insights avanzados estarán disponibles una vez que hayamos procesado suficientes datos de tu historial musical.</p>
+                    <div class="no-data-state">
+                        <div class="no-data-icon">📊</div>
+                        <h5>¡Bienvenido a Spotifire!</h5>
+                        <p>Tus insights musicales estarán disponibles una vez que tengamos suficientes datos de tu historial de reproducción.</p>
                         <p><small>Esto puede tomar unas horas después de conectar tu cuenta por primera vez.</small></p>
+                        <p><small>¡Sigue escuchando música y regresa pronto para ver tus estadísticas personalizadas!</small></p>
                     </div>
                 </div>
             </div>
@@ -549,7 +581,10 @@
                                 </div>
                             {% endfor %}
                         {% else %}
-                            <p>No se encontraron canciones recientes.</p>
+                            <div class="no-data-state">
+                                <p>No se encontraron canciones recientes.</p>
+                                <small>¡Empieza a escuchar música en Spotify!</small>
+                            </div>
                         {% endif %}
                     </div>
                 </div>
@@ -578,7 +613,10 @@
                                 </div>
                             {% endfor %}
                         {% else %}
-                            <p>No se encontraron artistas destacados.</p>
+                            <div class="no-data-state">
+                                <p>No se encontraron artistas destacados.</p>
+                                <small>¡Escucha más música para descubrir tus artistas favoritos!</small>
+                            </div>
                         {% endif %}
                     </div>
                 </div>
@@ -596,16 +634,27 @@ let topArtistsChart = null;
 let dailyPatternChart = null;
 let popularityChart = null;
 
-// Datos del template para JavaScript
+// Datos del template para JavaScript con validación
 const insightsData = {
-    topArtists: {{ advanced_insights.top_artists | tojson if advanced_insights.top_artists else '[]' }},
-    dailyPattern: {{ advanced_insights.daily_pattern | tojson if advanced_insights.daily_pattern else '[]' }},
-    popularityDistribution: {{ advanced_insights.popularity_distribution | tojson if advanced_insights.popularity_distribution else '{}' }}
+    topArtists: {{ advanced_insights.top_artists | tojson if advanced_insights and advanced_insights.top_artists else '[]' }},
+    dailyPattern: {{ advanced_insights.daily_pattern | tojson if advanced_insights and advanced_insights.daily_pattern else '[]' }},
+    popularityDistribution: {{ advanced_insights.popularity_distribution | tojson if advanced_insights and advanced_insights.popularity_distribution else '{}' }}
+};
+
+// Verificar si hay datos válidos
+const hasValidData = {
+    topArtists: insightsData.topArtists && insightsData.topArtists.length > 0,
+    dailyPattern: insightsData.dailyPattern && insightsData.dailyPattern.length > 0 && 
+                  insightsData.dailyPattern.some(item => item.play_count > 0),
+    popularityDistribution: insightsData.popularityDistribution && 
+                           insightsData.popularityDistribution.summary && 
+                           insightsData.popularityDistribution.summary.total_plays > 0
 };
 
 // Inicializar gráficos cuando el DOM esté listo
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM Content Loaded');
+    console.log('Has valid data:', hasValidData);
     
     // Wait a bit for Chart.js to fully load
     setTimeout(() => {
@@ -621,10 +670,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
 function initializeCharts() {
     console.log('Initializing charts...');
-    console.log('Insights data:', insightsData);
     
     // Gráfico de Artistas Top
-    if (insightsData.topArtists && insightsData.topArtists.length > 0) {
+    if (hasValidData.topArtists) {
         console.log('Creating top artists chart');
         createTopArtistsChart();
     } else {
@@ -632,7 +680,7 @@ function initializeCharts() {
     }
     
     // Gráfico de Patrón Diario
-    if (insightsData.dailyPattern && insightsData.dailyPattern.length > 0) {
+    if (hasValidData.dailyPattern) {
         console.log('Creating daily pattern chart');
         createDailyPatternChart();
     } else {
@@ -640,7 +688,7 @@ function initializeCharts() {
     }
     
     // Gráfico de Distribución de Popularidad
-    if (Object.keys(insightsData.popularityDistribution).length > 0) {
+    if (hasValidData.popularityDistribution) {
         console.log('Creating popularity chart');
         createPopularityChart();
     } else {
@@ -654,8 +702,6 @@ function createTopArtistsChart() {
         console.error('Canvas topArtistsChart not found');
         return;
     }
-    
-    console.log('Creating chart for canvas:', ctx);
     
     const artists = insightsData.topArtists.slice(0, 8); // Top 8 para mejor visualización
     
