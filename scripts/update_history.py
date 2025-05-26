@@ -5,10 +5,18 @@ lista de canciones con "Me Gusta" y lista de artistas seguidos
 para múltiples usuarios y guardarlos en archivos JSON con timestamp.
 
 Uso:
+    # Para procesar todos los usuarios en un directorio:
     python history_periodic_collector.py --users_dir DIRECTORIO_DE_USUARIOS --output_base_dir DIRECTORIO_BASE_SALIDA
 
-Ejemplo:
+    # Para procesar un usuario específico:
+    python history_periodic_collector.py --single_user_file ARCHIVO_JSON_USUARIO --output_base_dir DIRECTORIO_BASE_SALIDA
+
+Ejemplos:
+    # Procesar todos los usuarios
     python history_periodic_collector.py --users_dir /path/to/users_data --output_base_dir /home/ec2-user/spotifire_new_directories/data/users_data
+
+    # Procesar solo un usuario específico
+    python history_periodic_collector.py --single_user_file /path/to/users_data/user123.json --output_base_dir /home/ec2-user/spotifire_new_directories/data/users_data
 """
 
 import os
@@ -103,21 +111,13 @@ class SpotifyUserCollector:
     def _setup_spotify_client(self):
         """Configura y devuelve un cliente autenticado de Spotify"""
         # Scope para acceder al historial de reproducción
-        scope = (
-        "user-library-read "
-        "user-read-recently-played "
-        "user-top-read "
-        "playlist-read-private "
-        "playlist-read-collaborative "
-        "user-follow-read"
-    )
         
         # Configurar OAuth con token existente
         auth_manager = SpotifyOAuth(
             client_id=self.client_id,
             client_secret=self.client_secret,
             redirect_uri=self.redirect_uri,
-            scope=scope,
+            scope="user-library-read user-read-recently-played user-top-read playlist-read-private playlist-read-collaborative user-follow-read",
             open_browser=False,
             cache_path=f".spotify_cache_{os.path.basename(self.credentials_file)}"
         )
@@ -128,7 +128,7 @@ class SpotifyUserCollector:
                 "access_token": self.credentials.get("access_token", ""),
                 "refresh_token": self.credentials.get("refresh_token"),
                 "expires_at": self.credentials.get("expires_at", 0),
-                "scope": self.credentials.get("scope", scope),
+                "scope": self.credentials.get("scope", "user-library-read user-read-recently-played user-top-read playlist-read-private playlist-read-collaborative user-follow-read"),
                 "token_type": self.credentials.get("token_type", "Bearer")
             }
             
@@ -172,20 +172,7 @@ class SpotifyUserCollector:
         """Obtiene las canciones con 'Me Gustas' de un usuario específico"""
         try:
             # Configurar timeout en el objeto de sesión subyacente
-            # Este enfoque es más compatible con diferentes versiones de Spotipy
-            try:
-                if hasattr(self.sp, '_session'):
-                    self.sp._session.timeout = 20
-                    logger.info(f"Timeout configurado a 20 segundos para {self.user_id} usando _session")
-                elif hasattr(self.sp, '_auth'):
-                    # Algunas versiones utilizan una estructura más anidada
-                    if hasattr(self.sp._auth, 'session'):
-                        self.sp._auth.session.timeout = 20
-                        logger.info(f"Timeout configurado a 20 segundos para {self.user_id} usando _auth.session")
-                else:
-                    logger.warning(f"No se pudo configurar el timeout para {self.user_id}: estructura no reconocida")
-            except Exception as e:
-                logger.warning(f"Error al configurar timeout para {self.user_id}: {e}")
+            self._configure_session_timeout()
             
             # Implementar reintentos simples
             max_retries = 3
@@ -201,19 +188,10 @@ class SpotifyUserCollector:
                     logger.info(f"Obtenidas {len(likes_list)} canciones likeadas para {self.user_id}")
                     return likes_list
                 except Exception as e:
-                    if "timeout" in str(e).lower() and attempt < max_retries - 1:
-                        logger.warning(f"Timeout al obtener canciones para {self.user_id}, reintento {attempt+1}/{max_retries} en {retry_delay} segundos")
+                    if attempt < max_retries - 1 and self._should_retry(e):
+                        logger.warning(f"Error al obtener likes para {self.user_id}, reintento {attempt+1}/{max_retries} en {retry_delay} segundos: {str(e)}")
                         time.sleep(retry_delay)
                         retry_delay *= 2  # Backoff exponencial
-                    elif "rate limiting" in str(e).lower() and attempt < max_retries - 1:
-                        # Agregar manejo específico para rate limiting
-                        logger.warning(f"Rate limiting para {self.user_id}, reintento {attempt+1}/{max_retries} en {retry_delay} segundos")
-                        time.sleep(retry_delay)
-                        retry_delay *= 2
-                    elif attempt < max_retries - 1:
-                        # Para cualquier otro error, intentar de nuevo pero con menos reintento
-                        logger.warning(f"Error ({str(e)}) para {self.user_id}, reintento {attempt+1}/{max_retries} en {retry_delay} segundos")
-                        time.sleep(retry_delay)
                     else:
                         # Si es el último intento, propagar el error
                         raise
@@ -226,20 +204,7 @@ class SpotifyUserCollector:
         """Obtiene los artistas seguidos de un usuario específico"""
         try:
             # Configurar timeout en el objeto de sesión subyacente
-            # Este enfoque es más compatible con diferentes versiones de Spotipy
-            try:
-                if hasattr(self.sp, '_session'):
-                    self.sp._session.timeout = 20
-                    logger.info(f"Timeout configurado a 20 segundos para {self.user_id} usando _session")
-                elif hasattr(self.sp, '_auth'):
-                    # Algunas versiones utilizan una estructura más anidada
-                    if hasattr(self.sp._auth, 'session'):
-                        self.sp._auth.session.timeout = 20
-                        logger.info(f"Timeout configurado a 20 segundos para {self.user_id} usando _auth.session")
-                else:
-                    logger.warning(f"No se pudo configurar el timeout para {self.user_id}: estructura no reconocida")
-            except Exception as e:
-                logger.warning(f"Error al configurar timeout para {self.user_id}: {e}")
+            self._configure_session_timeout()
             
             # Implementar reintentos simples
             max_retries = 3
@@ -252,50 +217,27 @@ class SpotifyUserCollector:
                     while results['artists']['next']:
                         results = self.sp.next(results['artists'])
                         follows_list.extend(results['artists']['items'])
-                    logger.info(f"Obtenidas {len(follows_list)} artistas seguidos para {self.user_id}")
-
+                    logger.info(f"Obtenidos {len(follows_list)} artistas seguidos para {self.user_id}")
                     return follows_list
 
                 except Exception as e:
-                    if "timeout" in str(e).lower() and attempt < max_retries - 1:
-                        logger.warning(f"Timeout al obtener canciones para {self.user_id}, reintento {attempt+1}/{max_retries} en {retry_delay} segundos")
+                    if attempt < max_retries - 1 and self._should_retry(e):
+                        logger.warning(f"Error al obtener artistas seguidos para {self.user_id}, reintento {attempt+1}/{max_retries} en {retry_delay} segundos: {str(e)}")
                         time.sleep(retry_delay)
                         retry_delay *= 2  # Backoff exponencial
-                    elif "rate limiting" in str(e).lower() and attempt < max_retries - 1:
-                        # Agregar manejo específico para rate limiting
-                        logger.warning(f"Rate limiting para {self.user_id}, reintento {attempt+1}/{max_retries} en {retry_delay} segundos")
-                        time.sleep(retry_delay)
-                        retry_delay *= 2
-                    elif attempt < max_retries - 1:
-                        # Para cualquier otro error, intentar de nuevo pero con menos reintento
-                        logger.warning(f"Error ({str(e)}) para {self.user_id}, reintento {attempt+1}/{max_retries} en {retry_delay} segundos")
-                        time.sleep(retry_delay)
                     else:
                         # Si es el último intento, propagar el error
                         raise
                         
         except Exception as e:
-            logger.error(f"Error al obtener canciones likeadas para {self.user_id}: {e}")
+            logger.error(f"Error al obtener artistas seguidos para {self.user_id}: {e}")
             return []
 
     def get_top_tracks(self, period):
         """Obtiene las canciones principales de un usuario específico"""
         try:
             # Configurar timeout en el objeto de sesión subyacente
-            # Este enfoque es más compatible con diferentes versiones de Spotipy
-            try:
-                if hasattr(self.sp, '_session'):
-                    self.sp._session.timeout = 20
-                    logger.info(f"Timeout configurado a 20 segundos para {self.user_id} usando _session")
-                elif hasattr(self.sp, '_auth'):
-                    # Algunas versiones utilizan una estructura más anidada
-                    if hasattr(self.sp._auth, 'session'):
-                        self.sp._auth.session.timeout = 20
-                        logger.info(f"Timeout configurado a 20 segundos para {self.user_id} usando _auth.session")
-                else:
-                    logger.warning(f"No se pudo configurar el timeout para {self.user_id}: estructura no reconocida")
-            except Exception as e:
-                logger.warning(f"Error al configurar timeout para {self.user_id}: {e}")
+            self._configure_session_timeout()
             
             # Implementar reintentos simples
             max_retries = 3
@@ -303,28 +245,19 @@ class SpotifyUserCollector:
             
             for attempt in range(max_retries):
                 try:
-                    results = self.sp.current_user_top_tracks(limit=50,time_range=period)
+                    results = self.sp.current_user_top_tracks(limit=50, time_range=period)
                     top_tracks = results['items']
                     while results['next']:
                         results = self.sp.next(results)
                         top_tracks.extend(results['items'])
 
-                    logger.info(f"Obtenidas {len(top_tracks)} canciones para {self.user_id}")
+                    logger.info(f"Obtenidas {len(top_tracks)} top tracks para {self.user_id}")
                     return top_tracks
                 except Exception as e:
-                    if "timeout" in str(e).lower() and attempt < max_retries - 1:
-                        logger.warning(f"Timeout al obtener canciones para {self.user_id}, reintento {attempt+1}/{max_retries} en {retry_delay} segundos")
+                    if attempt < max_retries - 1 and self._should_retry(e):
+                        logger.warning(f"Error al obtener top tracks para {self.user_id}, reintento {attempt+1}/{max_retries} en {retry_delay} segundos: {str(e)}")
                         time.sleep(retry_delay)
                         retry_delay *= 2  # Backoff exponencial
-                    elif "rate limiting" in str(e).lower() and attempt < max_retries - 1:
-                        # Agregar manejo específico para rate limiting
-                        logger.warning(f"Rate limiting para {self.user_id}, reintento {attempt+1}/{max_retries} en {retry_delay} segundos")
-                        time.sleep(retry_delay)
-                        retry_delay *= 2
-                    elif attempt < max_retries - 1:
-                        # Para cualquier otro error, intentar de nuevo pero con menos reintento
-                        logger.warning(f"Error ({str(e)}) para {self.user_id}, reintento {attempt+1}/{max_retries} en {retry_delay} segundos")
-                        time.sleep(retry_delay)
                     else:
                         # Si es el último intento, propagar el error
                         raise
@@ -333,14 +266,32 @@ class SpotifyUserCollector:
             logger.error(f"Error al obtener top tracks para {self.user_id}: {e}")
             return []
 
-    def save_to_json(self, data, type):
+    def _configure_session_timeout(self):
+        """Configura el timeout de la sesión"""
+        try:
+            if hasattr(self.sp, '_session'):
+                self.sp._session.timeout = 20
+            elif hasattr(self.sp, '_auth') and hasattr(self.sp._auth, 'session'):
+                self.sp._auth.session.timeout = 20
+        except Exception as e:
+            logger.warning(f"Error al configurar timeout para {self.user_id}: {e}")
+
+    def _should_retry(self, error):
+        """Determina si se debe reintentar basado en el tipo de error"""
+        error_str = str(error).lower()
+        return ("timeout" in error_str or 
+                "rate limiting" in error_str or 
+                "connection" in error_str or
+                "read timed out" in error_str)
+
+    def save_to_json(self, data, data_type):
         """Guarda los datos en un archivo JSON"""
         if not data:
-            logger.warning(f"No hay datos para guardar para {self.user_id}")
+            logger.warning(f"No hay datos para guardar para {self.user_id} - tipo: {data_type}")
             return
         
         try:
-            if type=="likes":
+            if data_type == "likes":
                 filename = os.path.join(self.user_dir, f"likes_list.json")
                 list_jsons = [
                     {
@@ -355,10 +306,10 @@ class SpotifyUserCollector:
                     }
                     for item in data
                 ]
-            elif type=="followed":
+            elif data_type == "followed":
                 filename = os.path.join(self.user_dir, f"followed_artists.json")
                 list_jsons = {'artists_ids': [item['id'] for item in data]}
-            elif type=="top_tracks":
+            elif data_type == "top_tracks":
                 filename = os.path.join(self.user_dir, f"top_tracks.json")
                 list_jsons = [
                     {
@@ -373,6 +324,9 @@ class SpotifyUserCollector:
                     }
                     for i, item in enumerate(data)
                 ]
+            else:
+                logger.error(f"Tipo de datos no reconocido: {data_type}")
+                return None
 
             with open(filename, 'w', encoding='utf-8') as jsonfile:
                 json.dump(list_jsons, jsonfile, ensure_ascii=False, indent=4)            
@@ -386,15 +340,22 @@ class SpotifyUserCollector:
     def run_once(self):
         """Ejecuta una única recolección de datos"""
         try:
-            data_l = self.get_likes_playlist()
-            data_f = self.get_followed_artists()
-            data_t = self.get_top_tracks("long_term")
+            logger.info(f"Iniciando recolección de datos para usuario: {self.user_id}")
+            
+            # Obtener datos
+            data_likes = self.get_likes_playlist()
+            data_followed = self.get_followed_artists()
+            data_top_tracks = self.get_top_tracks("long_term")
 
-            self.save_to_csv(data_l,"likes")
-            self.save_to_csv(data_f,"followed")
-            self.save_to_csv(data_f,"top_tracks")
+            # Guardar datos (corregido el error de save_to_csv -> save_to_json)
+            likes_result = self.save_to_json(data_likes, "likes")
+            followed_result = self.save_to_json(data_followed, "followed")
+            top_tracks_result = self.save_to_json(data_top_tracks, "top_tracks")
 
-            return "Actualizado "
+            success_count = sum(1 for result in [likes_result, followed_result, top_tracks_result] if result is not None)
+            
+            logger.info(f"Recolección completada para {self.user_id}. Archivos guardados: {success_count}/3")
+            return f"Usuario {self.user_id} - {success_count}/3 archivos guardados exitosamente"
         
         except Exception as e:
             logger.error(f"Error al ejecutar recolección para {self.user_id}: {e}")
@@ -408,7 +369,7 @@ class SpotifyMultiUserCollector:
         Args:
             users_dir: Directorio donde se encuentran los archivos JSON de credenciales de usuarios
             output_base_dir: Directorio base donde se guardarán los JSON de datos
-            interval_seconds: Intervalo en segundos entre recolecciones (por defecto 1 semana)
+            interval_seconds: Intervalo en segundos entre recolecciones (por defecto 1 hora)
         """
         self.users_dir = users_dir
         self.output_base_dir = output_base_dir
@@ -431,7 +392,7 @@ class SpotifyMultiUserCollector:
         results = []
         
         # Añadir un retraso entre usuarios para evitar sobrecarga de la API
-        delay_between_users = 1  # segundos
+        delay_between_users = 2  # segundos
         
         for i, file in enumerate(files):
             try:
@@ -443,39 +404,160 @@ class SpotifyMultiUserCollector:
                 
                 # Añadir un retraso entre usuarios para evitar sobrecarga (excepto para el último)
                 if i < len(files) - 1:
+                    logger.info(f"Esperando {delay_between_users} segundos antes del siguiente usuario...")
                     time.sleep(delay_between_users)
                     
             except Exception as e:
                 logger.error(f"Error procesando usuario {os.path.basename(file)}: {e}")
+                results.append(f"Error procesando {os.path.basename(file)}: {str(e)}")
         
         return results
+
+class SpotifySingleUserCollector:
+    """
+    Clase para manejar la recolección de datos de un solo usuario específico.
+    """
+    def __init__(self, user_file, output_base_dir):
+        """
+        Inicializa el recolector para un solo usuario.
+        
+        Args:
+            user_file: Ruta al archivo JSON con las credenciales del usuario
+            output_base_dir: Directorio base donde se guardarán los JSON de datos
+        """
+        self.user_file = user_file
+        self.output_base_dir = output_base_dir
+        
+        # Verificar que el archivo existe
+        if not os.path.exists(user_file):
+            raise FileNotFoundError(f"El archivo de usuario no existe: {user_file}")
+        
+        logger.info(f"Inicializando recolector para usuario específico: {os.path.basename(user_file)}")
     
-    
+    def run_once(self):
+        """Ejecuta recolección para el usuario específico"""
+        try:
+            logger.info(f"Procesando usuario específico: {os.path.basename(self.user_file)}")
+            collector = SpotifyUserCollector(self.user_file, self.output_base_dir)
+            result = collector.run_once()
+            return result
+        except Exception as e:
+            logger.error(f"Error procesando usuario específico {os.path.basename(self.user_file)}: {e}")
+            return None
+
 def main():
-    parser = argparse.ArgumentParser(description='Recolecta datos historicos de múltiples usuarios de Spotify')
-    parser.add_argument('--users_dir', required=True, help='Directorio donde están los archivos JSON de credenciales de usuarios')
-    parser.add_argument('--output_base_dir', required=True, help='Directorio base donde se guardarán los JSON de datos')
-    parser.add_argument('--interval', type=int, default=3600, help='Intervalo en segundos entre recolecciones (por defecto: 3600)')
-    parser.add_argument('--once', action='store_true', help='Ejecutar solo una vez y salir')
-    args = parser.parse_args()
-    
-    # Verificar si el directorio de usuarios existe
-    if not os.path.isdir(args.users_dir):
-        logger.error(f"El directorio de usuarios no existe: {args.users_dir}")
-        return 1
-    
-    # Inicializar el colector información
-    collector = SpotifyMultiUserCollector(
-        users_dir=args.users_dir,
-        output_base_dir=args.output_base_dir,
-        interval_seconds=args.interval
+    parser = argparse.ArgumentParser(
+        description='Recolecta datos históricos de Spotify de múltiples usuarios o un usuario específico',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Ejemplos de uso:
+
+  # Procesar todos los usuarios en un directorio:
+  python %(prog)s --users_dir /path/to/users_data --output_base_dir /path/to/output
+
+  # Procesar solo un usuario específico:
+  python %(prog)s --single_user_file /path/to/user123.json --output_base_dir /path/to/output
+
+  # Procesar un usuario específico con ejecución única:
+  python %(prog)s --single_user_file /path/to/user123.json --output_base_dir /path/to/output --once
+        """
     )
     
-    # Ejecutar una vez o indefinidamente según las opciones
-    if args.once:
-        logger.info("Ejecutando recolección única para todos los usuarios")
-        collector.run_once()
+    # Grupo mutuamente exclusivo para la fuente de usuarios
+    source_group = parser.add_mutually_exclusive_group(required=True)
+    source_group.add_argument(
+        '--users_dir', 
+        help='Directorio donde están los archivos JSON de credenciales de usuarios'
+    )
+    source_group.add_argument(
+        '--single_user_file', 
+        help='Archivo JSON específico de un usuario para procesar'
+    )
     
+    parser.add_argument(
+        '--output_base_dir', 
+        required=True, 
+        help='Directorio base donde se guardarán los JSON de datos'
+    )
+    parser.add_argument(
+        '--interval', 
+        type=int, 
+        default=3600, 
+        help='Intervalo en segundos entre recolecciones (por defecto: 3600)'
+    )
+    parser.add_argument(
+        '--once', 
+        action='store_true', 
+        help='Ejecutar solo una vez y salir'
+    )
+    
+    args = parser.parse_args()
+    
+    # Verificar que el directorio de salida es válido
+    try:
+        os.makedirs(args.output_base_dir, exist_ok=True)
+    except Exception as e:
+        logger.error(f"No se puede crear el directorio de salida {args.output_base_dir}: {e}")
+        return 1
+    
+    try:
+        if args.single_user_file:
+            # Modo de usuario específico
+            logger.info("=== MODO USUARIO ESPECÍFICO ===")
+            logger.info(f"Archivo de usuario: {args.single_user_file}")
+            logger.info(f"Directorio de salida: {args.output_base_dir}")
+            
+            collector = SpotifySingleUserCollector(
+                user_file=args.single_user_file,
+                output_base_dir=args.output_base_dir
+            )
+            
+            result = collector.run_once()
+            if result:
+                logger.info(f"✅ Resultado: {result}")
+            else:
+                logger.error("❌ No se pudieron recolectar los datos del usuario")
+                return 1
+                
+        else:
+            # Modo de múltiples usuarios (comportamiento original)
+            logger.info("=== MODO MÚLTIPLES USUARIOS ===")
+            
+            # Verificar si el directorio de usuarios existe
+            if not os.path.isdir(args.users_dir):
+                logger.error(f"El directorio de usuarios no existe: {args.users_dir}")
+                return 1
+            
+            logger.info(f"Directorio de usuarios: {args.users_dir}")
+            logger.info(f"Directorio de salida: {args.output_base_dir}")
+            
+            # Inicializar el colector de múltiples usuarios
+            collector = SpotifyMultiUserCollector(
+                users_dir=args.users_dir,
+                output_base_dir=args.output_base_dir,
+                interval_seconds=args.interval
+            )
+            
+            # Ejecutar una vez o indefinidamente según las opciones
+            if args.once:
+                logger.info("Ejecutando recolección única para todos los usuarios")
+                results = collector.run_once()
+                logger.info(f"✅ Procesados {len(results)} usuarios")
+                for result in results:
+                    logger.info(f"  - {result}")
+            else:
+                logger.info("Modo periódico no implementado para múltiples usuarios en esta versión")
+                logger.info("Use --once para ejecutar una sola vez")
+                return 1
+    
+    except KeyboardInterrupt:
+        logger.info("🛑 Proceso interrumpido por el usuario")
+        return 0
+    except Exception as e:
+        logger.error(f"❌ Error durante la ejecución: {str(e)}")
+        return 1
+    
+    logger.info("🎉 Proceso completado exitosamente")
     return 0
 
 if __name__ == "__main__":
