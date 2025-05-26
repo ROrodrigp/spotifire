@@ -411,8 +411,8 @@ class GlueCatalogManager:
                 },
                 {
                     'Name': 'processed_at', 
-                    'Type': 'timestamp', 
-                    'Comment': 'Processing timestamp'
+                    'Type': 'string',  # Cambio temporal: string en lugar de timestamp
+                    'Comment': 'Processing timestamp (stored as string temporarily)'
                 },
                 {
                     'Name': 'data_source', 
