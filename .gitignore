@@ -3,3 +3,4 @@
 .spotify_cache
 **/*.csv
 **/*.log
+**/*.json
