@@ -7,6 +7,7 @@ This script creates multiple tables with predefined S3 locations.
 It includes error handling and logging for production environments.
 
 Updated to include the new artists_catalog table with partitioning.
+Fixed artists_id field types to match ETL output (string instead of array).
 
 Usage:
     python3 create_glue_catalog.py [--database-name DATABASE] [--region REGION]
@@ -272,8 +273,8 @@ class GlueCatalogManager:
                 },
                 {
                     'Name': 'artists_id', 
-                    'Type': 'array<string>', 
-                    'Comment': 'Uniques identifiers for the Spotify artists'
+                    'Type': 'string',  # CHANGED: from array<string> to string
+                    'Comment': 'Primary artist identifier (first artist from original list)'
                 },
                 {
                     'Name': 'album_id', 
@@ -321,7 +322,7 @@ class GlueCatalogManager:
                 {
                     'Name': 'track_id', 
                     'Type': 'string', 
-                    'Comment': 'Uniques identifiers for the Spotify track'
+                    'Comment': 'Unique identifier for the Spotify track'
                 },
                 {
                     'Name': 'track_name', 
@@ -330,8 +331,8 @@ class GlueCatalogManager:
                 },
                 {
                     'Name': 'artists_id', 
-                    'Type': 'array<string>', 
-                    'Comment': 'Uniques identifiers for the Spotify artists'
+                    'Type': 'string',  # CHANGED: from array<string> to string
+                    'Comment': 'Primary artist identifier (first artist from original list)'
                 },
                 {
                     'Name': 'album_id', 
@@ -369,7 +370,7 @@ class GlueCatalogManager:
                 {
                     'Name': 'artist_id', 
                     'Type': 'string', 
-                    'Comment': 'Uniques identifiers for the Spotify artist'
+                    'Comment': 'Unique identifier for the Spotify artist'
                 },
                 {
                     'Name': 'processed_at', 
@@ -787,10 +788,15 @@ def main():
             logger.info(f"  FROM {args.database_name}.user_tracks")
             logger.info(f"  GROUP BY user_id ORDER BY total_plays DESC;")
             logger.info(f"")
-            logger.info(f"  -- Top tracks analysis")
-            logger.info(f"  SELECT user_id, track_name, ith_preference")
+            logger.info(f"  -- Top tracks analysis (NEW SCHEMA)")
+            logger.info(f"  SELECT user_id, track_name, artists_id, ith_preference")
             logger.info(f"  FROM {args.database_name}.top_tracks")
             logger.info(f"  WHERE ith_preference <= 5;")
+            logger.info(f"")
+            logger.info(f"  -- Liked tracks by primary artist (NEW SCHEMA)")
+            logger.info(f"  SELECT artists_id, COUNT(*) as liked_tracks")
+            logger.info(f"  FROM {args.database_name}.likes")
+            logger.info(f"  GROUP BY artists_id ORDER BY liked_tracks DESC;")
             logger.info(f"")
             logger.info(f"  -- Artists by popularity and genre (NEW TABLE)")
             logger.info(f"  SELECT name, popularity, followers, primary_genre")
