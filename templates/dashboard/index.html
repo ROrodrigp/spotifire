@@ -287,9 +287,56 @@
             <button class="btn btn-dark" onclick="refreshAllInsights()">
                 <i class="bi bi-arrow-clockwise"></i> Actualizar datos
             </button>
+            {% if user_music_profile %}
+            <button class="btn btn-outline-light ms-2" onclick="refreshMusicProfile()">
+                <i class="bi bi-person-badge"></i> Actualizar perfil
+            </button>
+            {% endif %}
         </div>
 
         {% if insights_available and advanced_insights %}
+
+        <!-- Perfil Musical (nuevo) -->
+        {% if user_music_profile %}
+        <div class="row">
+            <div class="col-12">
+                <div class="insight-card" style="background: linear-gradient(135deg, #1DB954, #1ed760); color: white;">
+                    <div class="insight-header" style="border-bottom: 2px solid rgba(255,255,255,0.3);">
+                        <span class="insight-icon" style="font-size: 32px;">{{ user_music_profile.emoji }}</span>
+                        <h4 class="insight-title">Tu Perfil Musical: {{ user_music_profile.name }}</h4>
+                        <span class="insight-period" style="background: rgba(255,255,255,0.2);">ML Clustering</span>
+                    </div>
+                    
+                    <div style="padding: 15px 0;">
+                        <p style="font-size: 16px; margin-bottom: 15px; line-height: 1.5;">
+                            {{ user_music_profile.description }}
+                        </p>
+                        
+                        <div class="metric-summary" style="border-top: 1px solid rgba(255,255,255,0.3);">
+                            <div class="metric-item">
+                                <span class="metric-value" style="color: white;">{{ user_music_profile.stats.percentage if user_music_profile.stats else 0 }}%</span>
+                                <div class="metric-label" style="color: rgba(255,255,255,0.8);">de usuarios</div>
+                            </div>
+                            <div class="metric-item">
+                                <span class="metric-value" style="color: white;">{{ user_music_profile.cluster + 1 }}</span>
+                                <div class="metric-label" style="color: rgba(255,255,255,0.8);">Cluster ID</div>
+                            </div>
+                            <div class="metric-item">
+                                <span class="metric-value" style="color: white;">🎯</span>
+                                <div class="metric-label" style="color: rgba(255,255,255,0.8);">Perfil único</div>
+                            </div>
+                        </div>
+                        
+                        {% if user_music_profile.characteristics %}
+                        <div class="insight-description" style="color: rgba(255,255,255,0.9); margin-top: 15px;">
+                            <small><strong>Características:</strong> {{ user_music_profile.characteristics }}</small>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
         
         <!-- Insights Principales -->
         <div class="row">
@@ -953,6 +1000,43 @@ function refreshAllInsights() {
             btn.innerHTML = originalText;
             btn.disabled = false;
         });
+}
+
+function refreshMusicProfile() {
+    const btn = document.querySelector('button[onclick="refreshMusicProfile()"]');
+    if (!btn) return;
+    
+    const originalText = btn.innerHTML;
+    
+    // Mostrar estado de carga
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Actualizando perfil...';
+    btn.disabled = true;
+    
+    // Llamar a la API para refrescar perfiles
+    fetch('/api/music-profiles/refresh', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        credentials: 'same-origin'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Recargar la página para mostrar perfil actualizado
+            window.location.reload();
+        } else {
+            throw new Error(data.message || 'Error desconocido');
+        }
+    })
+    .catch(error => {
+        console.error('Error refrescando perfil musical:', error);
+        alert('Error al actualizar el perfil musical. Por favor, inténtalo de nuevo.');
+    })
+    .finally(() => {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    });
 }
 </script>
 <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
