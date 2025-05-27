@@ -343,20 +343,33 @@ class AthenaInsightsService:
         try:
             df = self.execute_query(query)
             
+            # Estructura inicial con valores por defecto
             result = {
-                'weekday': {'play_count': 0, 'active_days': 0, 'avg_popularity': 0},
-                'weekend': {'play_count': 0, 'active_days': 0, 'avg_popularity': 0}
+                'weekday': {
+                    'play_count': 0, 
+                    'active_days': 0, 
+                    'avg_popularity': 0,
+                    'percentage': 0.0
+                },
+                'weekend': {
+                    'play_count': 0, 
+                    'active_days': 0, 
+                    'avg_popularity': 0,
+                    'percentage': 0.0
+                }
             }
             
+            # Llenar con datos reales si existen
             for _, row in df.iterrows():
                 day_type = row['day_type']
-                result[day_type] = {
-                    'play_count': int(row['play_count']),
-                    'active_days': int(row['active_days']),
-                    'avg_popularity': round(float(row['avg_popularity']), 1)
-                }
+                if day_type in result:
+                    result[day_type].update({
+                        'play_count': int(row['play_count']),
+                        'active_days': int(row['active_days']),
+                        'avg_popularity': round(float(row['avg_popularity']) if row['avg_popularity'] is not None else 0, 1)
+                    })
             
-            # Calcular métricas adicionales
+            # Calcular porcentajes
             total_plays = result['weekday']['play_count'] + result['weekend']['play_count']
             if total_plays > 0:
                 result['weekday']['percentage'] = round((result['weekday']['play_count'] / total_plays) * 100, 1)
@@ -367,7 +380,21 @@ class AthenaInsightsService:
             
         except Exception as e:
             logger.error(f"Error obteniendo patrón semanal: {str(e)}")
-            return {}
+            # Devolver estructura válida en caso de error
+            return {
+                'weekday': {
+                    'play_count': 0, 
+                    'active_days': 0, 
+                    'avg_popularity': 0,
+                    'percentage': 0.0
+                },
+                'weekend': {
+                    'play_count': 0, 
+                    'active_days': 0, 
+                    'avg_popularity': 0,
+                    'percentage': 0.0
+                }
+            }
     
     def get_popularity_distribution(self, user_id: str, 
                                   days_back: int = 90) -> Dict:
@@ -409,34 +436,42 @@ class AthenaInsightsService:
         try:
             df = self.execute_query(query)
             
+            # Estructura inicial con valores por defecto
             result = {
-                'emergent': {'play_count': 0, 'unique_artists': 0, 'percentage': 0},
-                'growing': {'play_count': 0, 'unique_artists': 0, 'percentage': 0},
-                'established': {'play_count': 0, 'unique_artists': 0, 'percentage': 0}
+                'emergent': {'play_count': 0, 'unique_artists': 0, 'percentage': 0.0, 'avg_popularity': 0.0},
+                'growing': {'play_count': 0, 'unique_artists': 0, 'percentage': 0.0, 'avg_popularity': 0.0},
+                'established': {'play_count': 0, 'unique_artists': 0, 'percentage': 0.0, 'avg_popularity': 0.0}
             }
             
             total_plays = 0
             
+            # Llenar con datos reales si existen
             for _, row in df.iterrows():
                 tier = row['popularity_tier']
-                play_count = int(row['play_count'])
-                total_plays += play_count
-                
-                result[tier] = {
-                    'play_count': play_count,
-                    'unique_artists': int(row['unique_artists']),
-                    'avg_popularity': round(float(row['avg_popularity']), 1)
-                }
+                if tier in result:
+                    play_count = int(row['play_count'])
+                    total_plays += play_count
+                    
+                    result[tier].update({
+                        'play_count': play_count,
+                        'unique_artists': int(row['unique_artists']),
+                        'avg_popularity': round(float(row['avg_popularity']) if row['avg_popularity'] is not None else 0, 1)
+                    })
             
             # Calcular porcentajes
             if total_plays > 0:
                 for tier in result:
                     result[tier]['percentage'] = round((result[tier]['play_count'] / total_plays) * 100, 1)
             
+            # Determinar tier dominante
+            dominant_tier = 'unknown'
+            if total_plays > 0:
+                dominant_tier = max(result.keys(), key=lambda x: result[x]['play_count'])
+            
             # Agregar resumen general
             result['summary'] = {
                 'total_plays': total_plays,
-                'dominant_tier': max(result.keys(), key=lambda x: result[x]['play_count']) if total_plays > 0 else 'unknown'
+                'dominant_tier': dominant_tier
             }
             
             logger.info(f"Obtenida distribución de popularidad para usuario {user_id}")
@@ -444,7 +479,13 @@ class AthenaInsightsService:
             
         except Exception as e:
             logger.error(f"Error obteniendo distribución de popularidad: {str(e)}")
-            return {}
+            # Devolver estructura válida en caso de error
+            return {
+                'emergent': {'play_count': 0, 'unique_artists': 0, 'percentage': 0.0, 'avg_popularity': 0.0},
+                'growing': {'play_count': 0, 'unique_artists': 0, 'percentage': 0.0, 'avg_popularity': 0.0},
+                'established': {'play_count': 0, 'unique_artists': 0, 'percentage': 0.0, 'avg_popularity': 0.0},
+                'summary': {'total_plays': 0, 'dominant_tier': 'unknown'}
+            }
     
     def get_user_insights_summary(self, user_id: str, days_back: int = 90) -> Dict:
         """
@@ -477,4 +518,73 @@ class AthenaInsightsService:
             
         except Exception as e:
             logger.error(f"Error obteniendo resumen de insights: {str(e)}")
-            raise
+            # Devolver estructura válida con datos vacíos en caso de error
+            return {
+                'user_id': user_id,
+                'period_days': days_back,
+                'generated_at': datetime.now().isoformat(),
+                'error': 'No se pudieron obtener los insights en este momento',
+                'top_artists': [],
+                'daily_pattern': [],
+                'weekly_pattern': {
+                    'weekday': {'play_count': 0, 'active_days': 0, 'avg_popularity': 0, 'percentage': 0.0},
+                    'weekend': {'play_count': 0, 'active_days': 0, 'avg_popularity': 0, 'percentage': 0.0}
+                },
+                'popularity_distribution': {
+                    'emergent': {'play_count': 0, 'unique_artists': 0, 'percentage': 0.0, 'avg_popularity': 0.0},
+                    'growing': {'play_count': 0, 'unique_artists': 0, 'percentage': 0.0, 'avg_popularity': 0.0},
+                    'established': {'play_count': 0, 'unique_artists': 0, 'percentage': 0.0, 'avg_popularity': 0.0},
+                    'summary': {'total_plays': 0, 'dominant_tier': 'unknown'}
+                }
+            }
+
+def _determine_taste_profile(popularity_dist):
+    """
+    Determina el perfil de gusto musical basado en la distribución de popularidad.
+    
+    Esta función analiza las proporciones de música emergente vs establecida
+    para generar una descripción legible del perfil musical del usuario.
+    """
+    if not popularity_dist or 'summary' not in popularity_dist:
+        return 'Explorador'
+    
+    dominant_tier = popularity_dist['summary'].get('dominant_tier', 'unknown')
+    
+    profile_map = {
+        'emergent': 'Descubridor Underground',
+        'growing': 'Explorador Equilibrado', 
+        'established': 'Amante del Mainstream',
+        'unknown': 'Explorador'
+    }
+    
+    return profile_map.get(dominant_tier, 'Explorador')
+
+def _determine_activity_level(weekly_pattern):
+    """
+    Determina el nivel de actividad musical basado en patrones semanales.
+    
+    Analiza la consistencia y volumen de escucha para clasificar el nivel
+    de engagement musical del usuario.
+    """
+    if not weekly_pattern or 'weekday' not in weekly_pattern or 'weekend' not in weekly_pattern:
+        return 'Casual'
+    
+    total_plays = weekly_pattern.get('weekday', {}).get('play_count', 0) + \
+                  weekly_pattern.get('weekend', {}).get('play_count', 0)
+    
+    total_days = weekly_pattern.get('weekday', {}).get('active_days', 0) + \
+                 weekly_pattern.get('weekend', {}).get('active_days', 0)
+    
+    if total_days == 0:
+        return 'Casual'
+    
+    avg_plays_per_day = total_plays / total_days if total_days > 0 else 0
+    
+    if avg_plays_per_day > 50:
+        return 'Muy Activo'
+    elif avg_plays_per_day > 20:
+        return 'Activo'
+    elif avg_plays_per_day > 5:
+        return 'Moderado'
+    else:
+        return 'Casual'

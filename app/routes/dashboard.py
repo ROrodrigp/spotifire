@@ -23,6 +23,104 @@ except Exception as e:
     logger.error(f"Error inicializando servicio de Athena: {str(e)}")
     athena_service = None
 
+def _has_valid_insights(insights):
+    """
+    Verifica si los insights contienen datos válidos y útiles.
+    
+    Args:
+        insights: Diccionario con los insights del usuario
+        
+    Returns:
+        bool: True si hay datos útiles, False en caso contrario
+    """
+    if not insights or not isinstance(insights, dict):
+        return False
+    
+    # Verificar si hay datos en al menos una categoría
+    has_top_artists = bool(insights.get('top_artists', []))
+    
+    # Verificar patrones diarios
+    daily_pattern = insights.get('daily_pattern', [])
+    has_daily_data = any(item.get('play_count', 0) > 0 for item in daily_pattern)
+    
+    # Verificar patrones semanales
+    weekly_pattern = insights.get('weekly_pattern', {})
+    weekday_plays = weekly_pattern.get('weekday', {}).get('play_count', 0)
+    weekend_plays = weekly_pattern.get('weekend', {}).get('play_count', 0)
+    has_weekly_data = weekday_plays > 0 or weekend_plays > 0
+    
+    # Verificar distribución de popularidad
+    pop_dist = insights.get('popularity_distribution', {})
+    has_popularity_data = pop_dist.get('summary', {}).get('total_plays', 0) > 0
+    
+    # Se considera que hay insights válidos si hay datos en cualquier categoría
+    return has_top_artists or has_daily_data or has_weekly_data or has_popularity_data
+
+def _sanitize_insights(insights):
+    """
+    Limpia y valida la estructura de insights para evitar errores en el template.
+    
+    Args:
+        insights: Diccionario con insights (puede estar incompleto)
+        
+    Returns:
+        Dict: Insights con estructura garantizada
+    """
+    if not insights:
+        insights = {}
+    
+    # Asegurar estructura básica
+    sanitized = {
+        'user_id': insights.get('user_id', 'unknown'),
+        'period_days': insights.get('period_days', 90),
+        'generated_at': insights.get('generated_at', datetime.now().isoformat()),
+        'top_artists': insights.get('top_artists', []),
+        'daily_pattern': insights.get('daily_pattern', []),
+        'weekly_pattern': insights.get('weekly_pattern', {}),
+        'popularity_distribution': insights.get('popularity_distribution', {})
+    }
+    
+    # Asegurar estructura de weekly_pattern
+    if not sanitized['weekly_pattern'] or not isinstance(sanitized['weekly_pattern'], dict):
+        sanitized['weekly_pattern'] = {}
+    
+    # Asegurar que weekday y weekend existen con estructura mínima
+    default_pattern = {'play_count': 0, 'active_days': 0, 'avg_popularity': 0, 'percentage': 0.0}
+    
+    if 'weekday' not in sanitized['weekly_pattern']:
+        sanitized['weekly_pattern']['weekday'] = default_pattern.copy()
+    else:
+        # Asegurar que percentage existe
+        if 'percentage' not in sanitized['weekly_pattern']['weekday']:
+            sanitized['weekly_pattern']['weekday']['percentage'] = 0.0
+    
+    if 'weekend' not in sanitized['weekly_pattern']:
+        sanitized['weekly_pattern']['weekend'] = default_pattern.copy()
+    else:
+        # Asegurar que percentage existe
+        if 'percentage' not in sanitized['weekly_pattern']['weekend']:
+            sanitized['weekly_pattern']['weekend']['percentage'] = 0.0
+    
+    # Asegurar estructura de popularity_distribution
+    if not sanitized['popularity_distribution'] or not isinstance(sanitized['popularity_distribution'], dict):
+        sanitized['popularity_distribution'] = {}
+    
+    default_tier = {'play_count': 0, 'unique_artists': 0, 'percentage': 0.0, 'avg_popularity': 0.0}
+    
+    for tier in ['emergent', 'growing', 'established']:
+        if tier not in sanitized['popularity_distribution']:
+            sanitized['popularity_distribution'][tier] = default_tier.copy()
+        else:
+            # Asegurar que percentage existe
+            if 'percentage' not in sanitized['popularity_distribution'][tier]:
+                sanitized['popularity_distribution'][tier]['percentage'] = 0.0
+    
+    # Asegurar summary existe
+    if 'summary' not in sanitized['popularity_distribution']:
+        sanitized['popularity_distribution']['summary'] = {'total_plays': 0, 'dominant_tier': 'unknown'}
+    
+    return sanitized
+
 @dashboard_bp.route('/dashboard')
 def dashboard():
     """
@@ -93,37 +191,64 @@ def dashboard():
             logger.info(f"Obteniendo insights avanzados para usuario: {user_id}")
             
             # Obtener todos los insights en una sola operación optimizada
-            advanced_insights = athena_service.get_user_insights_summary(
+            raw_insights = athena_service.get_user_insights_summary(
                 user_id=user_id, 
                 days_back=90  # Últimos 3 meses para un análisis representativo
             )
             
-            insights_available = True
-            logger.info(f"Insights avanzados obtenidos exitosamente para {user_id}")
+            # Sanitizar y validar los insights
+            advanced_insights = _sanitize_insights(raw_insights)
+            
+            # Verificar si tenemos datos útiles
+            insights_available = _has_valid_insights(advanced_insights)
+            
+            if insights_available:
+                logger.info(f"Insights avanzados obtenidos exitosamente para {user_id}")
+            else:
+                logger.info(f"Insights obtenidos pero sin datos suficientes para {user_id}")
             
         except Exception as e:
             logger.warning(f"No se pudieron obtener insights avanzados: {str(e)}")
             # Continúamos con el dashboard básico si Athena falla
-            advanced_insights = {
-                'error': 'Los insights avanzados no están disponibles en este momento',
-                'top_artists': [],
-                'daily_pattern': [],
-                'weekly_pattern': {},
-                'popularity_distribution': {}
-            }
+            advanced_insights = _sanitize_insights({
+                'user_id': user_id,
+                'error': 'Los insights avanzados no están disponibles en este momento'
+            })
+            insights_available = False
+    else:
+        logger.warning("Servicio de Athena no disponible o user_id faltante")
+        advanced_insights = _sanitize_insights({
+            'user_id': user_id or 'unknown',
+            'error': 'Servicio de insights no disponible'
+        })
+        insights_available = False
     
     # Renderizar template con datos combinados
-    return render_template(
-        'dashboard/index.html',
-        user_name=user_display_name,
-        user_id=user_id,
-        # Datos básicos de Spotify API (contexto inmediato)
-        recent_tracks=spotify_data['recent_tracks'],
-        top_artists=spotify_data['top_artists'],
-        # Insights avanzados de Athena (patrones históricos)
-        advanced_insights=advanced_insights,
-        insights_available=insights_available
-    )
+    try:
+        return render_template(
+            'dashboard/index.html',
+            user_name=user_display_name,
+            user_id=user_id,
+            # Datos básicos de Spotify API (contexto inmediato)
+            recent_tracks=spotify_data['recent_tracks'],
+            top_artists=spotify_data['top_artists'],
+            # Insights avanzados de Athena (patrones históricos)
+            advanced_insights=advanced_insights,
+            insights_available=insights_available
+        )
+    except Exception as e:
+        logger.error(f"Error renderizando template: {str(e)}")
+        # En caso de error en el template, mostrar una página de error amigable
+        return render_template(
+            'dashboard/index.html',
+            user_name=user_display_name,
+            user_id=user_id,
+            recent_tracks=spotify_data['recent_tracks'],
+            top_artists=spotify_data['top_artists'],
+            advanced_insights=_sanitize_insights({}),
+            insights_available=False,
+            template_error="Hubo un problema cargando algunos insights. Inténtalo de nuevo más tarde."
+        )
 
 @dashboard_bp.route('/api/insights/<insight_type>')
 def get_specific_insight(insight_type):
@@ -202,12 +327,16 @@ def refresh_all_insights():
     
     try:
         # Obtener resumen completo actualizado
-        insights = athena_service.get_user_insights_summary(user_id, days_back)
+        raw_insights = athena_service.get_user_insights_summary(user_id, days_back)
+        
+        # Sanitizar los insights
+        insights = _sanitize_insights(raw_insights)
         
         return jsonify({
             'success': True,
             'user_id': user_id,
             'insights': insights,
+            'has_valid_data': _has_valid_insights(insights),
             'refreshed_at': datetime.now().isoformat()
         })
         
@@ -259,11 +388,14 @@ def actualizar_datos():
             user_id = token_info.get('user_id')
             if user_id:
                 try:
-                    insights = athena_service.get_user_insights_summary(user_id, days_back=30)
+                    raw_insights = athena_service.get_user_insights_summary(user_id, days_back=30)
+                    insights = _sanitize_insights(raw_insights)
                     response_data['advanced_insights'] = insights
+                    response_data['insights_available'] = _has_valid_insights(insights)
                 except Exception as e:
                     logger.warning(f"Error obteniendo insights en actualización: {str(e)}")
-                    response_data['advanced_insights'] = {'error': 'No disponible'}
+                    response_data['advanced_insights'] = _sanitize_insights({})
+                    response_data['insights_available'] = False
         
         return jsonify(response_data)
         
@@ -329,7 +461,8 @@ def _determine_taste_profile(popularity_dist):
     profile_map = {
         'emergent': 'Descubridor Underground',
         'growing': 'Explorador Equilibrado', 
-        'established': 'Amante del Mainstream'
+        'established': 'Amante del Mainstream',
+        'unknown': 'Explorador'
     }
     
     return profile_map.get(dominant_tier, 'Explorador')
@@ -341,7 +474,7 @@ def _determine_activity_level(weekly_pattern):
     Analiza la consistencia y volumen de escucha para clasificar el nivel
     de engagement musical del usuario.
     """
-    if not weekly_pattern:
+    if not weekly_pattern or 'weekday' not in weekly_pattern or 'weekend' not in weekly_pattern:
         return 'Casual'
     
     total_plays = weekly_pattern.get('weekday', {}).get('play_count', 0) + \
