@@ -220,7 +220,7 @@ class MusicProfileGenerator:
         
         return pd.DataFrame(cluster_stats)
     
-    def save_results(self, df, output_path='data/user_music_profiles.csv'):
+    def save_results(self, df, output_path='ml/data/user_music_profiles.csv'):
         """Guarda los resultados en CSV"""
         # Crear directorio si no existe
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -255,7 +255,7 @@ class MusicProfileGenerator:
 
 def main():
     parser = argparse.ArgumentParser(description='Genera perfiles musicales usando clustering')
-    parser.add_argument('--output', default='data/user_music_profiles.csv', help='Archivo de salida')
+    parser.add_argument('--output', default='ml/data/user_music_profiles.csv', help='Archivo de salida')
     parser.add_argument('--upload-s3', action='store_true', help='Subir resultados a S3')
     args = parser.parse_args()
     
