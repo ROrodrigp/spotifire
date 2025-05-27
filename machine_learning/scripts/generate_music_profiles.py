@@ -4,7 +4,7 @@ Script simple para generar perfiles musicales usando clustering K-Means.
 Usa datos de Athena para crear 5 perfiles de usuario y guarda resultados en CSV.
 
 Uso:
-    python scripts/generate_music_profiles.py
+    python ml/scripts/generate_music_profiles.py
 """
 
 import pandas as pd
@@ -65,22 +65,93 @@ class MusicProfileGenerator:
         self.s3_output_location = 's3://itam-analytics-ragp/athena-results/'
         
     def extract_user_features(self):
-        """Extrae features simples para cada usuario desde Athena"""
+        """Extrae features completas desde múltiples tablas de Athena"""
         
         query = f"""
+        WITH user_stats AS (
+            SELECT 
+                user_id,
+                COUNT(*) as total_plays,
+                COUNT(DISTINCT artist_id) as artist_diversity,
+                COUNT(DISTINCT track_id) as track_diversity,
+                AVG(CAST(popularity as DOUBLE)) as avg_popularity,
+                AVG(CAST(play_hour as DOUBLE)) as peak_hour,
+                AVG(CASE WHEN explicit = true THEN 1.0 ELSE 0.0 END) * 100 as explicit_percentage,
+                AVG(CAST(duration_minutes as DOUBLE)) as avg_track_duration
+            FROM {self.database_name}.user_tracks
+            WHERE user_id IS NOT NULL 
+                AND popularity IS NOT NULL
+                AND play_hour IS NOT NULL
+            GROUP BY user_id
+            HAVING COUNT(*) >= 10
+        ),
+        user_likes AS (
+            SELECT 
+                user_id,
+                COUNT(*) as total_likes,
+                AVG(CAST(track_popularity as DOUBLE)) as avg_like_popularity,
+                COUNT(DISTINCT artists_id[1]) as liked_artists_count  -- Primer artista de cada track
+            FROM {self.database_name}.likes
+            WHERE user_id IS NOT NULL
+            GROUP BY user_id
+        ),
+        user_follows AS (
+            SELECT 
+                user_id,
+                COUNT(*) as total_follows
+            FROM {self.database_name}.followed_artists
+            WHERE user_id IS NOT NULL
+            GROUP BY user_id
+        ),
+        user_tops AS (
+            SELECT 
+                user_id,
+                COUNT(*) as total_top_tracks,
+                AVG(CAST(track_popularity as DOUBLE)) as avg_top_popularity
+            FROM {self.database_name}.top_tracks
+            WHERE user_id IS NOT NULL
+            GROUP BY user_id
+        )
         SELECT 
-            user_id,
-            AVG(CAST(popularity as DOUBLE)) as avg_popularity,
-            COUNT(*) as daily_activity,
-            COUNT(DISTINCT artist_id) as artist_diversity,
-            AVG(CAST(play_hour as DOUBLE)) as peak_hour,
-            AVG(CASE WHEN explicit = true THEN 1.0 ELSE 0.0 END) * 100 as explicit_percentage
-        FROM {self.database_name}.{self.table_name}
-        WHERE user_id IS NOT NULL 
-            AND popularity IS NOT NULL
-            AND play_hour IS NOT NULL
-        GROUP BY user_id
-        HAVING COUNT(*) >= 10  -- Solo usuarios con al menos 10 canciones
+            us.user_id,
+            us.total_plays as daily_activity,
+            us.artist_diversity,
+            us.track_diversity,
+            us.avg_popularity,
+            us.peak_hour,
+            us.explicit_percentage,
+            us.avg_track_duration,
+            
+            -- Features de engagement social
+            COALESCE(ul.total_likes, 0) as total_likes,
+            COALESCE(ul.avg_like_popularity, us.avg_popularity) as avg_like_popularity,
+            COALESCE(ul.liked_artists_count, 0) as liked_artists_count,
+            COALESCE(uf.total_follows, 0) as total_follows,
+            COALESCE(ut.total_top_tracks, 0) as total_top_tracks,
+            COALESCE(ut.avg_top_popularity, us.avg_popularity) as avg_top_popularity,
+            
+            -- Features calculadas (ratios)
+            CASE 
+                WHEN us.total_plays > 0 THEN CAST(COALESCE(ul.total_likes, 0) as DOUBLE) / us.total_plays * 100
+                ELSE 0.0 
+            END as like_ratio,
+            
+            CASE 
+                WHEN us.artist_diversity > 0 THEN CAST(COALESCE(uf.total_follows, 0) as DOUBLE) / us.artist_diversity * 100
+                ELSE 0.0 
+            END as follow_ratio,
+            
+            -- Selectividad (cuánto le gusta vs cuánto escucha)
+            CASE 
+                WHEN us.artist_diversity > 0 THEN CAST(COALESCE(ul.liked_artists_count, 0) as DOUBLE) / us.artist_diversity * 100
+                ELSE 0.0 
+            END as like_selectivity
+            
+        FROM user_stats us
+        LEFT JOIN user_likes ul ON us.user_id = ul.user_id
+        LEFT JOIN user_follows uf ON us.user_id = uf.user_id  
+        LEFT JOIN user_tops ut ON us.user_id = ut.user_id
+        ORDER BY us.total_plays DESC
         """
         
         logger.info("Ejecutando query para extraer features de usuarios...")
