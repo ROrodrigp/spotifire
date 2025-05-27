@@ -253,6 +253,12 @@
         <a href="#" class="sidebar-item active">
             <i class="bi bi-house-door sidebar-icon"></i> Inicio
         </a>
+        <a href="#recent-tracks-section" class="sidebar-item">
+            <i class="bi bi-music-note-list sidebar-icon"></i> Actividad Reciente
+        </a>
+        <a href="#music-profile-section" class="sidebar-item">
+            <i class="bi bi-robot sidebar-icon"></i> Perfil Musical IA
+        </a>
         <a href="#top-artists-section" class="sidebar-item">
             <i class="bi bi-person-badge sidebar-icon"></i> Artistas Favoritos
         </a>
@@ -263,10 +269,7 @@
             <i class="bi bi-calendar-week sidebar-icon"></i> Patrones Semanales
         </a>
         <a href="#popularity-section" class="sidebar-item">
-            <i class="bi bi-graph-up sidebar-icon"></i> Perfil Musical
-        </a>
-        <a href="#recent-tracks-section" class="sidebar-item">
-            <i class="bi bi-music-note-list sidebar-icon"></i> Actividad Reciente
+            <i class="bi bi-graph-up sidebar-icon"></i> Análisis Musical
         </a>
     </div>
     
@@ -294,11 +297,74 @@
             {% endif %}
         </div>
 
-        {% if insights_available and advanced_insights %}
+        <!-- Sección de Actividad Reciente (datos en tiempo real) - MOVIDO ARRIBA -->
+        <div class="row" id="recent-tracks-section">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-music-note-list me-2"></i> Actividad Musical Reciente
+                    </div>
+                    <div class="card-body">
+                        {% if recent_tracks %}
+                            {% for track in recent_tracks %}
+                                <div class="track-item">
+                                    <div class="track-details">
+                                        <div class="track-title">{{ track.name }}</div>
+                                        <div class="track-artist">{{ track.artist }}</div>
+                                    </div>
+                                    <div class="track-time">
+                                        {% if track.played_at %}
+                                            {{ track.played_at }}
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="no-data-state">
+                                <p>No se encontraron canciones recientes.</p>
+                                <small>¡Empieza a escuchar música en Spotify!</small>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-person-badge me-2"></i> Artistas del Momento
+                    </div>
+                    <div class="card-body">
+                        {% if top_artists %}
+                            {% for artist in top_artists %}
+                                <div class="artist-item">
+                                    <div class="artist-details">
+                                        <div class="artist-name">{{ artist.name }}</div>
+                                        <div class="artist-genre">
+                                            {% if artist.genres and artist.genres|length > 0 %}
+                                                {{ artist.genres|join(', ') }}
+                                            {% else %}
+                                                Sin géneros definidos
+                                            {% endif %}
+                                        </div>
+                                        <div class="popularity-bar popularity-{{ (artist.popularity//10)*10 if artist.popularity is defined else 50 }}"></div>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="no-data-state">
+                                <p>No se encontraron artistas destacados.</p>
+                                <small>¡Escucha más música para descubrir tus artistas favoritos!</small>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
 
-        <!-- Perfil Musical (nuevo) -->
+        <!-- Perfil Musical (ML Clustering) -->
         {% if user_music_profile %}
-        <div class="row">
+        <div class="row" id="music-profile-section">
             <div class="col-12">
                 <div class="insight-card" style="background: linear-gradient(135deg, #1DB954, #1ed760); color: white;">
                     <div class="insight-header" style="border-bottom: 2px solid rgba(255,255,255,0.3);">
@@ -337,8 +403,10 @@
             </div>
         </div>
         {% endif %}
+
+        {% if insights_available and advanced_insights %}
         
-        <!-- Insights Principales -->
+        <!-- Insights Principales - MOVIDOS ABAJO -->
         <div class="row">
             <!-- Artistas Más Escuchados -->
             <div class="col-xl-6 col-lg-12" id="top-artists-section">
@@ -523,7 +591,7 @@
                 <div class="insight-card">
                     <div class="insight-header">
                         <i class="bi bi-graph-up insight-icon"></i>
-                        <h4 class="insight-title">Tu Perfil Musical</h4>
+                        <h4 class="insight-title">Tu Análisis Musical</h4>
                         <span class="insight-period">emergentes vs establecidos</span>
                     </div>
                     
@@ -604,71 +672,6 @@
         </div>
         
         {% endif %}
-        
-        <!-- Sección de Actividad Reciente (datos en tiempo real) -->
-        <div class="row" id="recent-tracks-section">
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        <i class="bi bi-music-note-list me-2"></i> Actividad Musical Reciente
-                    </div>
-                    <div class="card-body">
-                        {% if recent_tracks %}
-                            {% for track in recent_tracks %}
-                                <div class="track-item">
-                                    <div class="track-details">
-                                        <div class="track-title">{{ track.name }}</div>
-                                        <div class="track-artist">{{ track.artist }}</div>
-                                    </div>
-                                    <div class="track-time">
-                                        {% if track.played_at %}
-                                            {{ track.played_at }}
-                                        {% endif %}
-                                    </div>
-                                </div>
-                            {% endfor %}
-                        {% else %}
-                            <div class="no-data-state">
-                                <p>No se encontraron canciones recientes.</p>
-                                <small>¡Empieza a escuchar música en Spotify!</small>
-                            </div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-            
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        <i class="bi bi-person-badge me-2"></i> Artistas del Momento
-                    </div>
-                    <div class="card-body">
-                        {% if top_artists %}
-                            {% for artist in top_artists %}
-                                <div class="artist-item">
-                                    <div class="artist-details">
-                                        <div class="artist-name">{{ artist.name }}</div>
-                                        <div class="artist-genre">
-                                            {% if artist.genres and artist.genres|length > 0 %}
-                                                {{ artist.genres|join(', ') }}
-                                            {% else %}
-                                                Sin géneros definidos
-                                            {% endif %}
-                                        </div>
-                                        <div class="popularity-bar popularity-{{ (artist.popularity//10)*10 if artist.popularity is defined else 50 }}"></div>
-                                    </div>
-                                </div>
-                            {% endfor %}
-                        {% else %}
-                            <div class="no-data-state">
-                                <p>No se encontraron artistas destacados.</p>
-                                <small>¡Escucha más música para descubrir tus artistas favoritos!</small>
-                            </div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-        </div>
     </div>
 </div>
 {% endblock %}
