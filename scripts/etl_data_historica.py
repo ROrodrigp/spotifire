@@ -93,11 +93,11 @@ def check_specific_json_files(user_id):
     return files
 
 def define_schema_likes():
-    """Define the schema for the JSON files 'likes' """
+    """Define the schema for the JSON files 'likes' - Modified to use string for artists_id"""
     return StructType([
         StructField("track_id", StringType(), True),
         StructField("album_id", StringType(), True),
-        StructField("artists_id", ArrayType(StringType()), True),
+        StructField("artists_id", ArrayType(StringType()), True),  # Keep as array for reading
         StructField("explicit", BooleanType(), True),
         StructField("duration_ms", IntegerType(), True),
         StructField("track_name", StringType(), True),
@@ -112,12 +112,12 @@ def define_schema_followed():
     ])
 
 def define_schema_top_tracks():
-    """Define the schema for the JSON files 'top_tracks' """
+    """Define the schema for the JSON files 'top_tracks' - Modified to use string for artists_id"""
     return StructType([
         StructField("ith_preference", IntegerType(), True),
         StructField("track_id", StringType(), True),
         StructField("album_id", StringType(), True),
-        StructField("artists_id", ArrayType(StringType()), True),
+        StructField("artists_id", ArrayType(StringType()), True),  # Keep as array for reading
         StructField("explicit", BooleanType(), True),
         StructField("duration_ms", IntegerType(), True),
         StructField("track_name", StringType(), True),
@@ -187,6 +187,14 @@ def creates_likes_data(user_id):
         df_cleaned = df.selectExpr("*", "timestamp(added_at) as added_at_utc").drop("added_at")
         df_cleaned = df_cleaned.selectExpr("*","from_utc_timestamp(added_at_utc, 'America/Mexico_City') as added_at_mexico")
         
+        # Extract first artist ID from array and convert to string
+        df_cleaned = df_cleaned.withColumn(
+            "artists_id",
+            when(col("artists_id").isNotNull() & (size(col("artists_id")) > 0), 
+                 col("artists_id")[0])
+            .otherwise(lit("-1"))
+        )
+        
         # Handle null values and clean text fields
         df_cleaned = df_cleaned \
             .withColumn("track_name", trim(col("track_name"))) \
@@ -196,15 +204,10 @@ def creates_likes_data(user_id):
                 "album_id": "-1",
                 "track_popularity": 0,
                 "explicit": False,
-                "duration_ms": 0
+                "duration_ms": 0,
+                "artists_id": "-1"
             }) \
             .withColumn("processed_at", current_timestamp())
-        
-        # Handle null arrays
-        df_cleaned = df_cleaned.withColumn(
-            "artists_id",
-            when(col("artists_id").isNull(), array(lit("-1"))).otherwise(col("artists_id"))
-        )
         
         # Remove duplicates based on track_id and added_at_utc to handle potential duplicates from multiple files
         df_deduplicated = df_cleaned.dropDuplicates(["track_id", "added_at_utc"])
@@ -414,8 +417,16 @@ def creates_top_tracks_data(user_id):
         print(f"Total combined top tracks records for user {user_id}: {df.count()}")
         print(f"Records breakdown: {total_records_per_file}")
         
+        # Extract first artist ID from array and convert to string
+        df_cleaned = df.withColumn(
+            "artists_id",
+            when(col("artists_id").isNotNull() & (size(col("artists_id")) > 0), 
+                 col("artists_id")[0])
+            .otherwise(lit("-1"))
+        )
+        
         # Handle null values and clean text fields
-        df_cleaned = df \
+        df_cleaned = df_cleaned \
             .withColumn("user_id", lit(user_id)) \
             .withColumn("track_name", trim(col("track_name"))) \
             .fillna({
@@ -423,15 +434,10 @@ def creates_top_tracks_data(user_id):
                 "album_id": "-1",
                 "track_popularity": 0,
                 "explicit": False,
-                "duration_ms": 0
+                "duration_ms": 0,
+                "artists_id": "-1"
             }) \
             .withColumn("processed_at", current_timestamp())
-        
-        # Handle null arrays
-        df_cleaned = df_cleaned.withColumn(
-            "artists_id",
-            when(col("artists_id").isNull(), array(lit("-1"))).otherwise(col("artists_id"))
-        )
         
         # Remove duplicates based on track_id and ith_preference
         df_deduplicated = df_cleaned.dropDuplicates(["track_id", "ith_preference"])
