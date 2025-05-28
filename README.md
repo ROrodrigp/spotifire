@@ -5,6 +5,10 @@
 [![AWS](https://img.shields.io/badge/AWS-Glue%20%7C%20Athena%20%7C%20S3-orange.svg)](https://aws.amazon.com)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+**Real-time music analytics • ML-powered insights • Always-on Spotify Wrapped**
+
+[🚀 Quick Start](#-quick-start) • [📊 Features](#-features) • [🏗️ Architecture](#️-architecture) • [📖 Documentation](#-documentation) • [🤝 Contributing](#-contributing)
+
 **Spotifire** is a comprehensive music analytics platform that gives you Spotify Wrapped-style insights all year round, not just at the end of December. Track your musical evolution week by week, discover your listening patterns, and get personalized music profiles powered by machine learning.
 
 ## 🌟 Key Features
@@ -323,28 +327,6 @@ We welcome contributions! Here's how you can help:
 4. **📖 Documentation**: Help improve our docs and examples
 5. **🎨 UI/UX Improvements**: Make the dashboard even more beautiful and intuitive
 
-### Development Setup
-
-```bash
-# Fork and clone your fork
-git clone https://github.com/yourusername/spotifire.git
-cd spotifire
-
-# Create a feature branch
-git checkout -b feature/amazing-new-feature
-
-# Set up development environment (see Development section above)
-./setup.sh
-source venv/bin/activate
-
-# Make your changes and test
-python run.py
-
-# Commit and push
-git add .
-git commit -m "Add amazing new feature"
-git push origin feature/amazing-new-feature
-```
 
 ## 📄 License
 
