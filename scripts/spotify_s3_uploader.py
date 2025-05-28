@@ -186,8 +186,8 @@ def sync_user_data(user_dir, user_id, bucket, s3_prefix, existing_files, file_ex
         s3_object_name = f"{s3_prefix}/{user_id}/{file_name}"
         
         # Verificar si el archivo ya existe en S3
-        if s3_object_name in existing_files:
-            logger.debug(f"El archivo {file_name} ya existe en S3, omitiendo")
+        if s3_object_name in existing_files and file_extension == "csv":
+            logger.debug(f"El archivo {file_name} de extension csv ya existe en S3, omitiendo")
             skipped += 1
             continue
         

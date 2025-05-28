@@ -6,12 +6,13 @@ from flask import Blueprint, session, redirect, render_template, flash, jsonify,
 import spotipy
 from app.services.spotify import get_spotify_oauth, refresh_token, get_user_data, validate_token, load_user_token
 from app.services.athena import AthenaInsightsService
+from app.services.music_profiles import MusicProfileService
 from config import Config
 
 logger = logging.getLogger(__name__)
 dashboard_bp = Blueprint('dashboard', __name__)
 
-# Inicializar el servicio de Athena una vez al cargar el módulo
+# Inicializar servicios una vez al cargar el módulo
 try:
     athena_service = AthenaInsightsService(
         database_name='spotify_analytics',
@@ -22,6 +23,13 @@ try:
 except Exception as e:
     logger.error(f"Error inicializando servicio de Athena: {str(e)}")
     athena_service = None
+
+try:
+    music_profile_service = MusicProfileService()
+    logger.info("Servicio de perfiles musicales inicializado correctamente")
+except Exception as e:
+    logger.error(f"Error inicializando servicio de perfiles musicales: {str(e)}")
+    music_profile_service = None
 
 def _has_valid_insights(insights):
     """
@@ -223,6 +231,17 @@ def dashboard():
         })
         insights_available = False
     
+    # Obtener perfil musical del usuario (nuevo)
+    user_music_profile = None
+    if music_profile_service and user_id:
+        try:
+            logger.info(f"Obteniendo perfil musical para usuario: {user_id}")
+            user_music_profile = music_profile_service.get_user_profile(user_id)
+            logger.info(f"Perfil musical obtenido: {user_music_profile['name']}")
+        except Exception as e:
+            logger.warning(f"No se pudo obtener perfil musical: {str(e)}")
+            user_music_profile = None
+    
     # Renderizar template con datos combinados
     try:
         return render_template(
@@ -234,7 +253,9 @@ def dashboard():
             top_artists=spotify_data['top_artists'],
             # Insights avanzados de Athena (patrones históricos)
             advanced_insights=advanced_insights,
-            insights_available=insights_available
+            insights_available=insights_available,
+            # Perfil musical del usuario (ML clustering)
+            user_music_profile=user_music_profile
         )
     except Exception as e:
         logger.error(f"Error renderizando template: {str(e)}")
@@ -247,6 +268,7 @@ def dashboard():
             top_artists=spotify_data['top_artists'],
             advanced_insights=_sanitize_insights({}),
             insights_available=False,
+            user_music_profile=None,
             template_error="Hubo un problema cargando algunos insights. Inténtalo de nuevo más tarde."
         )
 
@@ -445,6 +467,113 @@ def get_user_summary():
     except Exception as e:
         logger.error(f"Error generando resumen de usuario: {str(e)}")
         return jsonify({'error': 'Error generando resumen'}), 500
+
+@dashboard_bp.route('/api/music-profile/<user_id>')
+def get_user_music_profile(user_id):
+    """
+    API endpoint para obtener el perfil musical de un usuario específico.
+    
+    Este endpoint proporciona el perfil musical generado por clustering ML,
+    incluyendo estadísticas del perfil y características del usuario.
+    
+    Args:
+        user_id: ID del usuario de Spotify
+    """
+    logger.debug(f"API music profile request: {user_id}")
+    
+    # Verificar autenticación básica
+    session_user_id = session.get('token_info', {}).get('user_id')
+    if not session_user_id:
+        return jsonify({'error': 'Usuario no autenticado'}), 401
+    
+    if not music_profile_service:
+        return jsonify({'error': 'Servicio de perfiles musicales no disponible'}), 503
+    
+    try:
+        # Obtener perfil del usuario
+        profile = music_profile_service.get_user_profile(user_id)
+        
+        return jsonify({
+            'success': True,
+            'user_id': user_id,
+            'profile': profile,
+            'generated_at': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error obteniendo perfil musical {user_id}: {str(e)}")
+        return jsonify({'error': f'Error obteniendo perfil musical'}), 500
+
+@dashboard_bp.route('/api/music-profiles/stats')
+def get_music_profiles_stats():
+    """
+    Endpoint para obtener estadísticas generales de todos los perfiles musicales.
+    
+    Útil para mostrar información comparativa y distribuciones de perfiles.
+    """
+    logger.debug("API music profiles stats request")
+    
+    # Verificar autenticación básica
+    session_user_id = session.get('token_info', {}).get('user_id')
+    if not session_user_id:
+        return jsonify({'error': 'Usuario no autenticado'}), 401
+    
+    if not music_profile_service:
+        return jsonify({'error': 'Servicio de perfiles musicales no disponible'}), 503
+    
+    try:
+        # Obtener estadísticas generales
+        stats = music_profile_service.get_all_profile_stats()
+        
+        return jsonify({
+            'success': True,
+            'stats': stats,
+            'service_status': 'available' if music_profile_service.is_service_available() else 'limited',
+            'generated_at': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error obteniendo estadísticas de perfiles: {str(e)}")
+        return jsonify({'error': 'Error obteniendo estadísticas'}), 500
+
+@dashboard_bp.route('/api/music-profiles/refresh', methods=['POST'])
+def refresh_music_profiles():
+    """
+    Endpoint para refrescar los perfiles musicales desde S3.
+    
+    Útil para actualizar los perfiles cuando se ha entrenado un nuevo modelo.
+    """
+    logger.debug("API refresh music profiles request")
+    
+    # Verificar autenticación
+    session_user_id = session.get('token_info', {}).get('user_id')
+    if not session_user_id:
+        return jsonify({'error': 'Usuario no autenticado'}), 401
+    
+    if not music_profile_service:
+        return jsonify({'error': 'Servicio de perfiles musicales no disponible'}), 503
+    
+    try:
+        # Refrescar perfiles
+        success = music_profile_service.refresh_profiles()
+        
+        if success:
+            stats = music_profile_service.get_all_profile_stats()
+            return jsonify({
+                'success': True,
+                'message': 'Perfiles musicales actualizados exitosamente',
+                'stats': stats,
+                'refreshed_at': datetime.now().isoformat()
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'No se pudieron actualizar los perfiles musicales'
+            }), 500
+        
+    except Exception as e:
+        logger.error(f"Error refrescando perfiles musicales: {str(e)}")
+        return jsonify({'error': 'Error refrescando perfiles'}), 500
 
 def _determine_taste_profile(popularity_dist):
     """
