@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Script mejorado para generar perfiles musicales usando clustering K-Means.
+Script para generar perfiles musicales usando clustering K-Means.
 Usa datos de Athena para crear 5 perfiles de usuario con lógica de mapeo balanceada.
 
 Uso:
-    python ml/scripts/generate_music_profiles_improved.py
+    python ml/scripts/generate_music_profiles.py
 """
 
 import pandas as pd
@@ -512,7 +512,7 @@ class MusicProfileGenerator:
         
         return pd.DataFrame(profile_stats)
     
-    def save_results(self, df, profile_stats, output_path='ml/data/user_music_profiles_improved.csv'):
+    def save_results(self, df, profile_stats, output_path='ml/data/user_music_profiles.csv'):
         """Guarda los resultados en CSV"""
         # Crear directorio si no existe
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -541,8 +541,8 @@ class MusicProfileGenerator:
         output_df.to_csv(output_path, index=False)
         logger.info(f"Resultados guardados en: {output_path}")
         
-        # Guardar estadísticas de perfiles
-        stats_path = output_path.replace('.csv', '_profile_stats.csv')
+        # Guardar estadísticas de perfiles (mantener nombre original para compatibilidad)
+        stats_path = output_path.replace('.csv', '_cluster_stats.csv')
         profile_stats.to_csv(stats_path, index=False)
         logger.info(f"Estadísticas de perfiles guardadas en: {stats_path}")
         
@@ -563,13 +563,13 @@ class MusicProfileGenerator:
             return None
 
 def main():
-    parser = argparse.ArgumentParser(description='Genera perfiles musicales usando clustering mejorado')
-    parser.add_argument('--output', default='ml/data/user_music_profiles_improved.csv', help='Archivo de salida')
+    parser = argparse.ArgumentParser(description='Genera perfiles musicales usando clustering K-Means')
+    parser.add_argument('--output', default='ml/data/user_music_profiles.csv', help='Archivo de salida')
     parser.add_argument('--upload-s3', action='store_true', help='Subir resultados a S3')
     parser.add_argument('--n-clusters', type=int, default=5, help='Número de clusters (default: 5)')
     args = parser.parse_args()
     
-    logger.info("=== Iniciando generación de perfiles musicales mejorada ===")
+    logger.info("=== Iniciando generación de perfiles musicales ===")
     
     try:
         # Inicializar generador
